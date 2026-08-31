@@ -15,38 +15,42 @@ export default function Storefront() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "in-stock" | "discount">("featured");
   const [loading, setLoading] = useState(true);
-  const [bannerText, setBannerText] = useState(
-    "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
-  );
+  const [bannerText, setBannerText] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchCatalog() {
-      setLoading(true);
-      const { data: productData } = await supabase
-        .from("products")
-        .select("*")
-        .order("created_at", { ascending: false });
+  async function fetchCatalog() {
+    setLoading(true);
+    
+    // Fetch products
+    const { data: productData } = await supabase
+      .from("products")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-      if (productData) {
-        setProducts(productData);
-      }
-
-      // Fetch live moving ticker announcement
-      const { data: bannerData } = await supabase
-        .from("store_settings")
-        .select("banner_text")
-        .eq("id", "promo_banner")
-        .single();
-
-      if (bannerData && bannerData.banner_text) {
-        setBannerText(bannerData.banner_text);
-      }
-
-      setLoading(false);
+    if (productData) {
+      setProducts(productData);
     }
 
-    fetchCatalog();
-  }, []);
+    // Fetch dynamic banner ticker
+    const { data: bannerData } = await supabase
+      .from("store_settings")
+      .select("banner_text")
+      .eq("id", "promo_banner")
+      .single();
+
+    if (bannerData && bannerData.banner_text) {
+      setBannerText(bannerData.banner_text);
+    } else {
+      setBannerText(
+        "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
+      );
+    }
+
+    setLoading(false);
+  }
+
+  fetchCatalog();
+}, []);
 
   // Filter & Sort Pipeline
   const filteredProducts = useMemo(() => {
@@ -94,20 +98,28 @@ export default function Storefront() {
       <div className="relative z-10">
         <Navbar />
 
-        {/* Live Moving Announcement Ticker Bar */}
-        <div className="bg-emerald-500 text-black py-2 overflow-hidden select-none relative shadow-sm border-b border-emerald-600/30">
-          <div className="animate-marquee whitespace-nowrap flex items-center text-xs font-black tracking-wide uppercase">
-            <span className="mx-6 flex items-center gap-2">
-              <Flame className="w-3.5 h-3.5 fill-black" /> {bannerText}
-            </span>
-            <span className="mx-6 flex items-center gap-2">
-              <Flame className="w-3.5 h-3.5 fill-black" /> {bannerText}
-            </span>
-            <span className="mx-6 flex items-center gap-2">
-              <Flame className="w-3.5 h-3.5 fill-black" /> {bannerText}
-            </span>
-          </div>
-        </div>
+       {/* Live Moving Announcement Ticker Bar */}
+<div className="bg-emerald-500 text-black h-8 overflow-hidden select-none relative shadow-sm border-b border-emerald-600/30 flex items-center">
+  {bannerText ? (
+    <div className="animate-marquee whitespace-nowrap flex items-center text-xs font-black tracking-wide uppercase">
+      <span className="mx-6 flex items-center gap-2">
+        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+      </span>
+      <span className="mx-6 flex items-center gap-2">
+        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+      </span>
+      <span className="mx-6 flex items-center gap-2">
+        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+      </span>
+    </div>
+  ) : (
+    <div className="w-full flex items-center justify-center">
+      <span className="text-[10px] font-bold tracking-widest uppercase opacity-60">
+        Loading latest offers...
+      </span>
+    </div>
+  )}
+</div>
 
         {/* Hero Section */}
         <section className="border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-white to-slate-100 dark:from-slate-900/60 dark:to-slate-950/90 py-10 sm:py-14 px-4 sm:px-6">
