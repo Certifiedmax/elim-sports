@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Shield, ShoppingCart, MessageCircle } from "lucide-react";
+import { Shield, ShoppingCart } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useCart } from "@/context/CartContext";
 
@@ -11,6 +11,8 @@ export default function Navbar() {
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur sticky top-0 z-40 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        
+        {/* Brand & Logo */}
         <Link href="/" className="flex items-center space-x-3">
           <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center p-0.5">
             <img 
@@ -29,7 +31,9 @@ export default function Navbar() {
           </div>
         </Link>
 
+        {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Light / Dark Mode Toggle */}
           <ThemeToggle />
 
           {/* Cart Drawer Trigger Button */}
@@ -57,6 +61,7 @@ export default function Navbar() {
             <span className="hidden sm:inline">Owner Portal</span>
           </Link>
         </div>
+
       </div>
     </header>
   );

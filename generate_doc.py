@@ -1,7 +1,12 @@
-import docx
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
+try:
+    import docx  # type: ignore
+    from docx.shared import Inches, Pt, RGBColor  # type: ignore
+    from docx.enum.text import WD_ALIGN_PARAGRAPH  # type: ignore
+    from docx.enum.table import WD_TABLE_ALIGNMENT  # type: ignore
+except ImportError:
+    print("Error: 'python-docx' package is not installed.")
+    print("Install it using: pip install python-docx")
+    exit(1)
 
 doc = docx.Document()
 
