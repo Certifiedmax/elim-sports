@@ -18,39 +18,68 @@ export default function Storefront() {
   const [bannerText, setBannerText] = useState<string | null>(null);
 
   useEffect(() => {
-  async function fetchCatalog() {
-    setLoading(true);
-    
-    // Fetch products
-    const { data: productData } = await supabase
-      .from("products")
-      .select("*")
-      .order("created_at", { ascending: false });
+    let isMounted = true;
 
-    if (productData) {
-      setProducts(productData);
+    async function fetchCatalog() {
+      try {
+        // 1. Fetch Products
+        const { data: productData, error: productError } = await supabase
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (productError) {
+          console.error("Supabase products fetch error:", productError);
+        }
+
+        if (isMounted && productData) {
+          setProducts(productData);
+        }
+      } catch (err) {
+        console.error("Failed to load products:", err);
+      }
+
+      try {
+        // 2. Fetch Dynamic Banner Ticker
+        const { data: bannerData, error: bannerError } = await supabase
+          .from("store_settings")
+          .select("banner_text")
+          .eq("id", "promo_banner")
+          .maybeSingle();
+
+        if (bannerError) {
+          console.error("Supabase banner fetch error:", bannerError);
+        }
+
+        if (isMounted) {
+          if (bannerData && bannerData.banner_text) {
+            setBannerText(bannerData.banner_text);
+          } else {
+            setBannerText(
+              "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
+            );
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load banner:", err);
+        if (isMounted) {
+          setBannerText(
+            "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     }
 
-    // Fetch dynamic banner ticker
-    const { data: bannerData } = await supabase
-      .from("store_settings")
-      .select("banner_text")
-      .eq("id", "promo_banner")
-      .single();
+    fetchCatalog();
 
-    if (bannerData && bannerData.banner_text) {
-      setBannerText(bannerData.banner_text);
-    } else {
-      setBannerText(
-        "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
-      );
-    }
-
-    setLoading(false);
-  }
-
-  fetchCatalog();
-}, []);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filter & Sort Pipeline
   const filteredProducts = useMemo(() => {
@@ -98,28 +127,28 @@ export default function Storefront() {
       <div className="relative z-10">
         <Navbar />
 
-       {/* Live Moving Announcement Ticker Bar */}
-<div className="bg-emerald-500 text-black h-8 overflow-hidden select-none relative shadow-sm border-b border-emerald-600/30 flex items-center">
-  {bannerText ? (
-    <div className="animate-marquee whitespace-nowrap flex items-center text-xs font-black tracking-wide uppercase">
-      <span className="mx-6 flex items-center gap-2">
-        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
-      </span>
-      <span className="mx-6 flex items-center gap-2">
-        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
-      </span>
-      <span className="mx-6 flex items-center gap-2">
-        <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
-      </span>
-    </div>
-  ) : (
-    <div className="w-full flex items-center justify-center">
-      <span className="text-[10px] font-bold tracking-widest uppercase opacity-60">
-        Loading latest offers...
-      </span>
-    </div>
-  )}
-</div>
+        {/* Live Moving Announcement Ticker Bar */}
+        <div className="bg-emerald-500 text-black h-8 overflow-hidden select-none relative shadow-sm border-b border-emerald-600/30 flex items-center">
+          {bannerText ? (
+            <div className="animate-marquee whitespace-nowrap flex items-center text-xs font-black tracking-wide uppercase">
+              <span className="mx-6 flex items-center gap-2">
+                <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+              </span>
+              <span className="mx-6 flex items-center gap-2">
+                <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+              </span>
+              <span className="mx-6 flex items-center gap-2">
+                <Flame className="w-3.5 h-3.5 fill-black shrink-0" /> {bannerText}
+              </span>
+            </div>
+          ) : (
+            <div className="w-full flex items-center justify-center">
+              <span className="text-[10px] font-bold tracking-widest uppercase opacity-60">
+                Loading latest offers...
+              </span>
+            </div>
+          )}
+        </div>
 
         {/* Hero Section */}
         <section className="border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-white to-slate-100 dark:from-slate-900/60 dark:to-slate-950/90 py-10 sm:py-14 px-4 sm:px-6">
