@@ -133,11 +133,16 @@ export default function AdminPage() {
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      setPreviewUrl(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Revoke old preview to avoid memory leaks
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
     }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
   };
 
   async function handleAddProduct(e: React.FormEvent) {
@@ -147,57 +152,63 @@ export default function AdminPage() {
     let finalImageUrl = imageUrl.trim();
     setSubmitting(true);
 
-    if (imageMode === "upload") {
-      if (!selectedFile) {
-        alert("Please select or capture a photo first.");
-        setSubmitting(false);
-        return;
+    try {
+      if (imageMode === "upload") {
+        if (!selectedFile) {
+          alert("Please select an image from your gallery or files first.");
+          setSubmitting(false);
+          return;
+        }
+
+        const fileExt = selectedFile.name.split(".").pop() || "jpg";
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const filePath = `products/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("product-images")
+          .upload(filePath, selectedFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          throw new Error("Image upload error: " + uploadError.message);
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("product-images")
+          .getPublicUrl(filePath);
+
+        finalImageUrl = publicUrlData.publicUrl;
+      } else {
+        if (!finalImageUrl) {
+          alert("Please provide a valid image link.");
+          setSubmitting(false);
+          return;
+        }
       }
 
-      const fileExt = selectedFile.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-      const filePath = `products/${fileName}`;
+      const qty = Math.max(0, parseInt(stockQuantity, 10) || 0);
+      const regularPrice = originalPrice ? Number(originalPrice) : null;
 
-      const { error: uploadError } = await supabase.storage
-        .from("product-images")
-        .upload(filePath, selectedFile);
+      const { error: insertError } = await supabase.from("products").insert([
+        {
+          name: name.trim(),
+          category,
+          price: Number(price),
+          original_price: regularPrice,
+          stock_quantity: qty,
+          image_url: finalImageUrl,
+          description: description.trim(),
+          in_stock: qty > 0,
+        },
+      ]);
 
-      if (uploadError) {
-        alert("Image upload error: " + uploadError.message);
-        setSubmitting(false);
-        return;
+      if (insertError) {
+        throw new Error("Database insert error: " + insertError.message);
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("product-images")
-        .getPublicUrl(filePath);
-
-      finalImageUrl = publicUrlData.publicUrl;
-    } else {
-      if (!finalImageUrl) {
-        alert("Please provide a valid image link.");
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    const qty = Math.max(0, parseInt(stockQuantity, 10) || 0);
-    const regularPrice = originalPrice ? Number(originalPrice) : null;
-
-    const { error } = await supabase.from("products").insert([
-      {
-        name: name.trim(),
-        category,
-        price: Number(price),
-        original_price: regularPrice,
-        stock_quantity: qty,
-        image_url: finalImageUrl,
-        description: description.trim(),
-        in_stock: qty > 0,
-      },
-    ]);
-
-    if (!error) {
+      // Cleanup and Reset Form
       setName("");
       setPrice("");
       setOriginalPrice("");
@@ -205,13 +216,20 @@ export default function AdminPage() {
       setImageUrl("");
       setDescription("");
       setSelectedFile(null);
-      setPreviewUrl(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(null);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
       await loadProducts();
-    } else {
-      alert("Error adding product: " + error.message);
+    } catch (err: any) {
+      alert(err.message || "Failed to add equipment to catalog.");
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
   }
 
   async function updateStock(id: string, currentQty: number, delta: number) {
@@ -498,20 +516,20 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setImageMode("upload")}
-                    className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-semibold transition ${
+                    className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                       imageMode === "upload"
                         ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-700 dark:text-emerald-400"
                         : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
                     }`}
                   >
                     <Camera className="w-3.5 h-3.5" />
-                    <span>Camera / Upload</span>
+                    <span>Upload Image</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setImageMode("url")}
-                    className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-semibold transition ${
+                    className={`flex items-center justify-center gap-1.5 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer ${
                       imageMode === "url"
                         ? "bg-emerald-50 dark:bg-emerald-950/60 border-emerald-500 text-emerald-700 dark:text-emerald-400"
                         : "bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
@@ -524,21 +542,24 @@ export default function AdminPage() {
 
                 {imageMode === "upload" ? (
                   <div className="space-y-2">
-                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition">
+                    <label 
+                      htmlFor="admin-file-upload" 
+                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition"
+                    >
                       <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
                         <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                          Snap photo
+                          Select from Gallery
                         </span>{" "}
                         or browse files
                       </p>
                       <input
+                        id="admin-file-upload"
                         ref={fileInputRef}
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         onChange={handleFileChange}
-                        className="hidden"
+                        className="sr-only"
                       />
                     </label>
                     {previewUrl && (
