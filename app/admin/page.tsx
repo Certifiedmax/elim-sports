@@ -21,7 +21,6 @@ import {
   Megaphone,
   Tag,
   Save,
-  RotateCcw,
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
@@ -41,9 +40,9 @@ export default function AdminPage() {
   const [savingBanner, setSavingBanner] = useState(false);
   const [bannerSavedStatus, setBannerSavedStatus] = useState(false);
 
-  // Form State
+  // Form State with Multi-Sport Categories
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("Badminton");
+  const [category, setCategory] = useState("Footwear");
   const [price, setPrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
   const [stockQuantity, setStockQuantity] = useState("5");
@@ -409,7 +408,7 @@ export default function AdminPage() {
             <input
               type="text"
               required
-              placeholder="e.g. Running Shoes Offer: From KSH 1,650/= | Stringing available this weekend at Moms & Dads"
+              placeholder="e.g. Football boots and badminton rackets available at Moms & Dads Juja"
               value={bannerText}
               onChange={(e) => setBannerText(e.target.value)}
               className="flex-1 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition font-medium"
@@ -442,7 +441,7 @@ export default function AdminPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Yonex Astrox 7DG Racket"
+                  placeholder="e.g. Nike Mercurial Boots / Astrox 7DG Racket"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -457,12 +456,13 @@ export default function AdminPage() {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition font-medium"
                   >
-                    <option value="Badminton">Badminton</option>
-                    <option value="Footwear">Footwear</option>
-                    <option value="Apparel">Apparel</option>
-                    <option value="Accessories">Accessories</option>
+                    <option value="Footwear">Footwear (Boots & Running)</option>
+                    <option value="Rackets & Paddles">Rackets & Paddles (Badminton, Tennis, Pickleball)</option>
+                    <option value="Jerseys & Kits">Jerseys & Kits (Football, Matchwear)</option>
+                    <option value="Apparel & Gym">Apparel & Gym (Tracksuits, Tights, Bras)</option>
+                    <option value="Accessories & Gear">Accessories & Gear (Ropes, Grips, Shuttles)</option>
                   </select>
                 </div>
 
@@ -490,7 +490,7 @@ export default function AdminPage() {
                   <input
                     type="number"
                     required
-                    placeholder="e.g. 6500"
+                    placeholder="e.g. 4500"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 transition"
@@ -504,7 +504,7 @@ export default function AdminPage() {
                   </label>
                   <input
                     type="number"
-                    placeholder="Optional (e.g. 7500)"
+                    placeholder="Optional (e.g. 5500)"
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -639,7 +639,7 @@ export default function AdminPage() {
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Material, string tension, size range..."
+                  placeholder="Size (e.g. 40-45, S-XL), material, tension, colors..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"

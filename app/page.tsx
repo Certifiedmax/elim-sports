@@ -7,13 +7,22 @@ import Footer from "@/components/Footer";
 import ProductCard, { Product } from "@/components/ProductCard";
 import { Flame, Search, SlidersHorizontal, X, Tag } from "lucide-react";
 
-const CATEGORIES = ["All", "Badminton", "Footwear", "Apparel", "Accessories"];
+const CATEGORIES = [
+  "All",
+  "Footwear",
+  "Rackets & Paddles",
+  "Jerseys & Kits",
+  "Apparel & Gym",
+  "Accessories & Gear",
+];
 
 export default function Storefront() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "in-stock" | "discount">("featured");
+  const [sortBy, setSortBy] = useState<
+    "featured" | "price-asc" | "price-desc" | "in-stock" | "discount"
+  >("featured");
   const [loading, setLoading] = useState(true);
   const [bannerText, setBannerText] = useState<string | null>(null);
 
@@ -56,7 +65,7 @@ export default function Storefront() {
             setBannerText(bannerData.banner_text);
           } else {
             setBannerText(
-              "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
+              "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
             );
           }
         }
@@ -64,7 +73,7 @@ export default function Storefront() {
         console.error("Failed to load banner:", err);
         if (isMounted) {
           setBannerText(
-            "🔥 Special Offers: Running Shoes from KSH 1,650/= | Free grip wrapping on all Yonex rackets | Drop off rackets for restringing at Moms & Dads Juja"
+            "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
           );
         }
       } finally {
@@ -88,10 +97,13 @@ export default function Storefront() {
         const matchesCategory =
           selectedCategory === "All" || product.category === selectedCategory;
 
+        const q = searchQuery.toLowerCase().trim();
         const matchesSearch =
-          product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          !q ||
+          product.name.toLowerCase().includes(q) ||
+          product.category.toLowerCase().includes(q) ||
           (product.description &&
-            product.description.toLowerCase().includes(searchQuery.toLowerCase()));
+            product.description.toLowerCase().includes(q));
 
         return matchesCategory && matchesSearch;
       })
@@ -114,7 +126,6 @@ export default function Storefront() {
 
   return (
     <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col justify-between overflow-hidden transition-colors duration-300">
-      
       {/* Background Watermark */}
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-0 overflow-hidden select-none">
         <img
@@ -155,13 +166,13 @@ export default function Storefront() {
           <div className="max-w-3xl mx-auto text-center space-y-4">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
               <Tag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              Verified Original Equipment & Court Footwear
+              Authentic Boots, Rackets, Jerseys & Gym Wear
             </div>
             <h1 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-              Gear Up With Pro Court & Athletic Wear
+              Gear Up With Pro Sportswear & Equipment
             </h1>
             <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed">
-              Yonex rackets, nylon shuttles, original court shoes, and sports kits stocked at Elim Sports in Juja.
+              Football boots, running shoes, rackets (badminton, tennis, pickleball), team jerseys, gym tights, and tracksuits at Elim Sports in Juja.
             </p>
 
             {/* Live Search Input Box */}
@@ -170,7 +181,7 @@ export default function Storefront() {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
                   type="text"
-                  placeholder="Search rackets, shuttles, shoes, grips..."
+                  placeholder="Search boots, rackets, jerseys, tracksuits, sizes..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pl-10 pr-10 text-xs text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-emerald-500 transition"
@@ -191,11 +202,9 @@ export default function Storefront() {
 
         {/* Filter, Sort & Catalog Grid */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-          
           {/* Controls Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
-            
-            {/* Category Buttons */}
+            {/* Horizontally Scrollable Category Filter Pills */}
             <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
               {CATEGORIES.map((cat) => (
                 <button
@@ -250,7 +259,7 @@ export default function Storefront() {
           ) : filteredProducts.length === 0 ? (
             <div className="text-center py-20 bg-white dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800/80 p-8 space-y-3">
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                No matching gear found for "{searchQuery || selectedCategory}"
+                No matching gear found for &ldquo;{searchQuery || selectedCategory}&rdquo;
               </p>
               <p className="text-xs text-slate-500">
                 Try clearing your search term or checking another category.
