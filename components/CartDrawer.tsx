@@ -1,0 +1,334 @@
+"use client";
+
+import { useState } from "react";
+import { useCart } from "@/context/CartContext";
+import { 
+  X, 
+  Trash2, 
+  Plus, 
+  Minus, 
+  ShoppingCart, 
+  Send, 
+  User, 
+  Phone, 
+  MapPin, 
+  ChevronRight,
+  ArrowLeft
+} from "lucide-react";
+
+export default function CartDrawer() {
+  const {
+    cart,
+    isCartOpen,
+    setIsCartOpen,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+    totalItems,
+    totalPrice,
+  } = useCart();
+
+  // Checkout Step State: 'cart' view vs 'details' form
+  const [step, setStep] = useState<"cart" | "details">("cart");
+
+  // Customer Delivery Info State
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [deliveryOption, setDeliveryOption] = useState("Store Pickup (Moms & Dads Centre, Juja)");
+  const [deliveryNote, setDeliveryNote] = useState("");
+
+  if (!isCartOpen) return null;
+
+  const handleWhatsAppOrder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cart.length === 0 || !customerName.trim()) return;
+
+    const phone = "254729044446";
+    let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
+    message += `─────────────────────────\n`;
+    message += `👤 *Customer Name:* ${customerName.trim()}\n`;
+    if (customerPhone.trim()) {
+      message += `📞 *Contact:* ${customerPhone.trim()}\n`;
+    }
+    message += `📍 *Fulfillment:* ${deliveryOption}\n`;
+    if (deliveryNote.trim()) {
+      message += `📝 *Notes/Location:* ${deliveryNote.trim()}\n`;
+    }
+    message += `─────────────────────────\n`;
+    message += `*ORDER ITEMS:*\n\n`;
+
+    cart.forEach((item, index) => {
+      const itemSubtotal = Number(item.product.price) * item.quantity;
+      message += `${index + 1}. *${item.product.name}*\n`;
+      message += `   • Qty: ${item.quantity} × KSH ${Number(item.product.price).toLocaleString()}\n`;
+      message += `   • Subtotal: KSH ${itemSubtotal.toLocaleString()}\n\n`;
+    });
+
+    message += `─────────────────────────\n`;
+    message += `*Total Units:* ${totalItems}\n`;
+    message += `*Total Order Value:* KSH ${totalPrice.toLocaleString()}\n`;
+    message += `─────────────────────────\n`;
+    message += `Please confirm stock reservation and payment details!`;
+
+    const encoded = encodeURIComponent(message);
+    window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
+  };
+
+  const resetAndClose = () => {
+    setIsCartOpen(false);
+    setStep("cart");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      {/* Backdrop */}
+      <div
+        onClick={resetAndClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+      />
+
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+        <div className="w-screen max-w-md bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col justify-between">
+          
+          {/* Header */}
+          <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {step === "details" ? (
+                <button
+                  type="button"
+                  onClick={() => setStep("cart")}
+                  className="p-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition"
+                  title="Back to cart"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              ) : (
+                <ShoppingCart className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              )}
+              <h2 className="font-bold text-base text-slate-900 dark:text-white">
+                {step === "cart" ? `Shopping Cart (${totalItems})` : "Customer & Pickup Details"}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={resetAndClose}
+              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Step 1: Cart Items List */}
+          {step === "cart" && (
+            <>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {cart.length === 0 ? (
+                  <div className="text-center py-16 space-y-3">
+                    <ShoppingCart className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto" />
+                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+                      Your cart is currently empty.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsCartOpen(false)}
+                      className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                    >
+                      Browse badminton gear & shoes →
+                    </button>
+                  </div>
+                ) : (
+                  cart.map((item) => {
+                    const maxStock = item.product.stock_quantity ?? 1;
+                    return (
+                      <div
+                        key={item.product.id}
+                        className="flex gap-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 items-center justify-between"
+                      >
+                        <img
+                          src={item.product.image_url}
+                          alt={item.product.name}
+                          className="w-16 h-16 rounded-lg object-cover bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex-shrink-0"
+                        />
+
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-xs text-slate-900 dark:text-white truncate">
+                            {item.product.name}
+                          </h4>
+                          <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            KSH {Number(item.product.price).toLocaleString()}
+                          </p>
+
+                          {/* Stepper */}
+                          <div className="flex items-center gap-2 mt-2">
+                            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="text-xs font-bold px-2 text-slate-900 dark:text-white">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                                disabled={item.quantity >= maxStock}
+                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 transition"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeFromCart(item.product.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500 transition"
+                              title="Remove item"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {cart.length > 0 && (
+                <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-3">
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Estimated Total:</span>
+                    <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                      KSH {totalPrice.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setStep("details")}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded-xl shadow-md transition cursor-pointer active:scale-98"
+                  >
+                    <span>Proceed to Delivery & Info</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={clearCart}
+                    className="w-full text-center text-[11px] text-slate-500 hover:text-rose-500 transition cursor-pointer"
+                  >
+                    Clear entire cart
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Step 2: Customer Delivery Form */}
+          {step === "details" && (
+            <form onSubmit={handleWhatsAppOrder} className="flex-1 flex flex-col justify-between">
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Your Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Alex / Brian"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Phone Number (Optional)
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. 0712 345 678"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Fulfillment / Pickup Method
+                  </label>
+                  <select
+                    value={deliveryOption}
+                    onChange={(e) => setDeliveryOption(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition font-medium"
+                  >
+                    <option value="Store Pickup (Moms & Dads Centre, Juja)">
+                      🏸 Store Pickup (Moms & Dads Centre, Juja)
+                    </option>
+                    <option value="Campus Delivery (JKUAT Main Gate / Hostels)">
+                      🎓 Campus Delivery (JKUAT)
+                    </option>
+                    <option value="Campus Delivery (Zetech Technology Park)">
+                      🎓 Campus Delivery (Zetech)
+                    </option>
+                    <option value="Rider / Parcel Delivery (Nairobi & Countrywide)">
+                      📦 Rider / Courier Delivery (Outside Juja)
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Specific Court / Hostel / Delivery Notes
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Bring during Thursday evening club practice, or Gate A pickup..."
+                    value={deliveryNote}
+                    onChange={(e) => setDeliveryNote(e.target.value)}
+                    className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+
+                {/* Quick Summary Preview */}
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1">
+                  <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                    <span>Total Items:</span>
+                    <strong className="text-slate-900 dark:text-white">{totalItems} units</strong>
+                  </div>
+                  <div className="flex justify-between text-slate-500 dark:text-slate-400">
+                    <span>Order Amount:</span>
+                    <strong className="text-emerald-600 dark:text-emerald-400 font-bold">KSH {totalPrice.toLocaleString()}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit to WhatsApp */}
+              <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
+                <button
+                  type="submit"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Send Order to Coach Sam (WhatsApp)</span>
+                </button>
+                <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
+                  Opens WhatsApp with all item descriptions & your pickup location pre-filled.
+                </p>
+              </div>
+            </form>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
