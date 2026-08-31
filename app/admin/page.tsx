@@ -21,6 +21,7 @@ import {
   Megaphone,
   Tag,
   Save,
+  RotateCcw,
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
@@ -53,7 +54,8 @@ export default function AdminPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const sessionAuth = sessionStorage.getItem("elim_admin_auth");
@@ -145,6 +147,16 @@ export default function AdminPage() {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
+  const handleClearSelectedFile = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    if (galleryInputRef.current) galleryInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  };
+
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) return;
@@ -155,7 +167,7 @@ export default function AdminPage() {
     try {
       if (imageMode === "upload") {
         if (!selectedFile) {
-          alert("Please select an image from your gallery or files first.");
+          alert("Please select a photo from your gallery or take one using the camera.");
           setSubmitting(false);
           return;
         }
@@ -215,14 +227,7 @@ export default function AdminPage() {
       setStockQuantity("5");
       setImageUrl("");
       setDescription("");
-      setSelectedFile(null);
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(null);
-      }
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      handleClearSelectedFile();
 
       await loadProducts();
     } catch (err: any) {
@@ -541,30 +546,79 @@ export default function AdminPage() {
                 </div>
 
                 {imageMode === "upload" ? (
-                  <div className="space-y-2">
-                    <label 
-                      htmlFor="admin-file-upload" 
-                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition"
-                    >
-                      <UploadCloud className="w-5 h-5 text-slate-400 mb-1" />
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                          Select from Gallery
-                        </span>{" "}
-                        or browse files
-                      </p>
-                      <input
-                        id="admin-file-upload"
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="sr-only"
-                      />
-                    </label>
-                    {previewUrl && (
-                      <div className="aspect-video w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800">
-                        <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                  <div className="space-y-3">
+                    {previewUrl ? (
+                      /* Image Preview Container with Remove Action */
+                      <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 group">
+                        <img
+                          src={previewUrl}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        {/* Hover Overlay Button */}
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-200">
+                          <button
+                            type="button"
+                            onClick={handleClearSelectedFile}
+                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg transition cursor-pointer active:scale-95"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove & Pick Another</span>
+                          </button>
+                        </div>
+                        {/* Mobile Direct Action Button */}
+                        <button
+                          type="button"
+                          onClick={handleClearSelectedFile}
+                          aria-label="Remove image"
+                          className="sm:hidden absolute top-2 right-2 p-2 rounded-xl bg-rose-600 text-white shadow-md cursor-pointer active:scale-90"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* Dual Option Picker: Gallery vs Direct Camera */
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {/* Option 1: Gallery / Files */}
+                        <label
+                          htmlFor="gallery-upload"
+                          className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition text-center group"
+                        >
+                          <UploadCloud className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition mb-1" />
+                          <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                            Photo Gallery
+                          </span>
+                          <span className="text-[9px] text-slate-400">Browse files</span>
+                          <input
+                            id="gallery-upload"
+                            ref={galleryInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleFileChange}
+                            className="sr-only"
+                          />
+                        </label>
+
+                        {/* Option 2: Direct Camera Snap */}
+                        <label
+                          htmlFor="camera-snap"
+                          className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition text-center group"
+                        >
+                          <Camera className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition mb-1" />
+                          <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                            Take Photo
+                          </span>
+                          <span className="text-[9px] text-slate-400">Launch camera</span>
+                          <input
+                            id="camera-snap"
+                            ref={cameraInputRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleFileChange}
+                            className="sr-only"
+                          />
+                        </label>
                       </div>
                     )}
                   </div>
