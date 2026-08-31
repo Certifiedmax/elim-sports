@@ -3,6 +3,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CartProvider } from "@/context/CartContext";
 import CartDrawer from "@/components/CartDrawer";
+import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
   title: "Elim Sports - Official Court Gear & Equipment",
@@ -26,6 +27,7 @@ export default function RootLayout({
           <CartProvider>
             {children}
             <CartDrawer />
+            <Analytics />
           </CartProvider>
         </ThemeProvider>
       </body>
