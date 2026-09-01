@@ -13,7 +13,10 @@ import {
   Phone, 
   MapPin, 
   ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  Sparkles
 } from "lucide-react";
 
 export default function CartDrawer() {
@@ -28,8 +31,8 @@ export default function CartDrawer() {
     totalPrice,
   } = useCart();
 
-  // Checkout Step State: 'cart' view vs 'details' form
-  const [step, setStep] = useState<"cart" | "details">("cart");
+  // 3 Steps: 'cart' | 'details' | 'success'
+  const [step, setStep] = useState<"cart" | "details" | "success">("cart");
 
   // Customer Delivery Info State
   const [customerName, setCustomerName] = useState("");
@@ -73,6 +76,12 @@ export default function CartDrawer() {
 
     const encoded = encodeURIComponent(message);
     window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
+
+    // 1. Clear cart so it's fresh for next time
+    clearCart();
+
+    // 2. Transition customer to the Order Success / Processing view
+    setStep("success");
   };
 
   const resetAndClose = () => {
@@ -98,22 +107,28 @@ export default function CartDrawer() {
                 <button
                   type="button"
                   onClick={() => setStep("cart")}
-                  className="p-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition"
+                  className="p-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
                   title="Back to cart"
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
+              ) : step === "success" ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               ) : (
                 <ShoppingCart className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               )}
               <h2 className="font-bold text-base text-slate-900 dark:text-white">
-                {step === "cart" ? `Shopping Cart (${totalItems})` : "Customer & Pickup Details"}
+                {step === "cart"
+                  ? `Shopping Cart (${totalItems})`
+                  : step === "details"
+                  ? "Customer & Pickup Details"
+                  : "Order Placed Successfully"}
               </h2>
             </div>
             <button
               type="button"
               onClick={resetAndClose}
-              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition"
+              className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -132,7 +147,7 @@ export default function CartDrawer() {
                     <button
                       type="button"
                       onClick={() => setIsCartOpen(false)}
-                      className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                      className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer"
                     >
                       Browse sports gear & shoes →
                     </button>
@@ -174,7 +189,7 @@ export default function CartDrawer() {
                               <button
                                 type="button"
                                 onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.selectedSize)}
-                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition"
+                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition cursor-pointer"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -185,7 +200,7 @@ export default function CartDrawer() {
                                 type="button"
                                 onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.selectedSize)}
                                 disabled={item.quantity >= maxStock}
-                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 transition"
+                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 transition cursor-pointer"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -335,6 +350,53 @@ export default function CartDrawer() {
                 </p>
               </div>
             </form>
+          )}
+
+          {/* Step 3: Order Submitted Screen */}
+          {step === "success" && (
+            <div className="flex-1 flex flex-col justify-between p-6 text-center">
+              <div className="my-auto space-y-4">
+                <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 rounded-3xl mx-auto flex items-center justify-center shadow-lg border border-emerald-300 dark:border-emerald-800">
+                  <Sparkles className="w-8 h-8" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                    Order Submitted!
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
+                    Thank you, <strong className="text-slate-800 dark:text-slate-200">{customerName}</strong>! Your order has been dispatched via WhatsApp to the Elim Sports team.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-left space-y-2.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <Clock className="w-4 h-4 text-emerald-500" />
+                    <span>Order Processing Status:</span>
+                  </div>
+                  <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                    <p className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Stock reserved and awaiting confirmation on WhatsApp.
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Fulfillment: <strong className="text-slate-700 dark:text-slate-300">{deliveryOption}</strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={resetAndClose}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
+                >
+                  Continue Shopping
+                </button>
+              </div>
+            </div>
           )}
 
         </div>
