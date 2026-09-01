@@ -43,7 +43,7 @@ export default function CartDrawer() {
     e.preventDefault();
     if (cart.length === 0 || !customerName.trim()) return;
 
-    const phone = "254729044446";
+    const phone = "254794268983";
     let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
     message += `─────────────────────────\n`;
     message += `👤 *Customer Name:* ${customerName.trim()}\n`;
@@ -59,7 +59,8 @@ export default function CartDrawer() {
 
     cart.forEach((item, index) => {
       const itemSubtotal = Number(item.product.price) * item.quantity;
-      message += `${index + 1}. *${item.product.name}*\n`;
+      const sizeTag = item.selectedSize ? ` [Size: ${item.selectedSize}]` : "";
+      message += `${index + 1}. *${item.product.name}*${sizeTag}\n`;
       message += `   • Qty: ${item.quantity} × KSH ${Number(item.product.price).toLocaleString()}\n`;
       message += `   • Subtotal: KSH ${itemSubtotal.toLocaleString()}\n\n`;
     });
@@ -133,15 +134,16 @@ export default function CartDrawer() {
                       onClick={() => setIsCartOpen(false)}
                       className="text-xs text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
                     >
-                      Browse badminton gear & shoes →
+                      Browse sports gear & shoes →
                     </button>
                   </div>
                 ) : (
                   cart.map((item) => {
                     const maxStock = item.product.stock_quantity ?? 1;
+                    const itemKey = `${item.product.id}-${item.selectedSize || "default"}`;
                     return (
                       <div
-                        key={item.product.id}
+                        key={itemKey}
                         className="flex gap-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 items-center justify-between"
                       >
                         <img
@@ -154,6 +156,14 @@ export default function CartDrawer() {
                           <h4 className="font-semibold text-xs text-slate-900 dark:text-white truncate">
                             {item.product.name}
                           </h4>
+                          
+                          {/* Size Pill Display */}
+                          {item.selectedSize && (
+                            <div className="inline-block px-2 py-0.5 mt-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                              Size: {item.selectedSize}
+                            </div>
+                          )}
+
                           <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                             KSH {Number(item.product.price).toLocaleString()}
                           </p>
@@ -163,7 +173,7 @@ export default function CartDrawer() {
                             <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5">
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                                onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.selectedSize)}
                                 className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition"
                               >
                                 <Minus className="w-3 h-3" />
@@ -173,7 +183,7 @@ export default function CartDrawer() {
                               </span>
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                                onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.selectedSize)}
                                 disabled={item.quantity >= maxStock}
                                 className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 transition"
                               >
@@ -183,8 +193,8 @@ export default function CartDrawer() {
 
                             <button
                               type="button"
-                              onClick={() => removeFromCart(item.product.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500 transition"
+                              onClick={() => removeFromCart(item.product.id, item.selectedSize)}
+                              className="p-1.5 text-slate-400 hover:text-rose-500 transition cursor-pointer"
                               title="Remove item"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -291,7 +301,7 @@ export default function CartDrawer() {
                   </label>
                   <textarea
                     rows={2}
-                    placeholder="e.g. Bring during Thursday evening club practice, or Gate A pickup..."
+                    placeholder="e.g. Bring during club practice, or Gate A pickup..."
                     value={deliveryNote}
                     onChange={(e) => setDeliveryNote(e.target.value)}
                     className="w-full text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -318,10 +328,10 @@ export default function CartDrawer() {
                   className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Send Order to Coach Sam (WhatsApp)</span>
+                  <span>Send Order to WhatsApp</span>
                 </button>
                 <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
-                  Opens WhatsApp with all item descriptions & your pickup location pre-filled.
+                  Opens WhatsApp with all item sizes, prices & pickup location pre-filled.
                 </p>
               </div>
             </form>
