@@ -23,7 +23,6 @@ import {
   Save,
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
-import { Product } from "@/components/ProductCard";
 
 // Place them right here:
 const APPAREL_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "Free Size"];
@@ -47,7 +46,7 @@ export default function AdminPage() {
       prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size]
     );
   };
-export default function AdminPage() {
+
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState("");
@@ -62,14 +61,6 @@ export default function AdminPage() {
   const [bannerText, setBannerText] = useState("");
   const [savingBanner, setSavingBanner] = useState(false);
   const [bannerSavedStatus, setBannerSavedStatus] = useState(false);
-
-  // Form State with Multi-Sport Categories
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("Footwear");
-  const [price, setPrice] = useState("");
-  const [originalPrice, setOriginalPrice] = useState("");
-  const [stockQuantity, setStockQuantity] = useState("5");
-  const [description, setDescription] = useState("");
 
   // Image Source Switcher
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");

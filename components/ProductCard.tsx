@@ -33,11 +33,8 @@ export default function ProductCard({ product }: { product: Product }) {
   const handleAddToCart = () => {
     if (isOutOfStock) return;
 
-    // Pass the selected size along with the item to the cart
-    addToCart({
-      ...product,
-      selectedSize: selectedSize || undefined,
-    });
+    // Pass the product to the cart
+    addToCart(product);
 
     setAddedAnimation(true);
     setTimeout(() => setAddedAnimation(false), 1200);

@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark, .dark *));
-
 :root {
   --background: #ffffff;
   --foreground: #0f172a;
@@ -34,4 +32,4 @@ body {
 
 .animate-marquee:hover {
   animation-play-state: paused;
-}
+};
