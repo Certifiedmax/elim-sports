@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
-import { 
+import { supabase } from "@/lib/supabase";
+// ✅ Correct path:
+import { getProductImages } from "@/lib/product";import { 
   X, 
   Trash2, 
   Plus, 
@@ -16,7 +18,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
-  Sparkles
+  Sparkles,
+  Loader2
 } from "lucide-react";
 
 export default function CartDrawer() {
@@ -33,6 +36,7 @@ export default function CartDrawer() {
 
   // 3 Steps: 'cart' | 'details' | 'success'
   const [step, setStep] = useState<"cart" | "details" | "success">("cart");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Customer Delivery Info State
   const [customerName, setCustomerName] = useState("");
@@ -42,47 +46,95 @@ export default function CartDrawer() {
 
   if (!isCartOpen) return null;
 
-  const handleWhatsAppOrder = (e: React.FormEvent) => {
+  // Atomically decrement stock in Supabase for each cart item
+ const deductCartStockFromSupabase = async () => {
+  for (const item of cart) {
+    try {
+      const { data: product, error: fetchErr } = await supabase
+        .from("products")
+        .select("stock_quantity, in_stock, size_stocks")
+        .eq("id", item.product.id)
+        .single();
+
+      if (fetchErr || !product) continue;
+
+      let updatedSizeStocks = { ...(product.size_stocks || {}) };
+      let newTotalStock = product.stock_quantity ?? (product.in_stock ? 10 : 0);
+
+      // If item had a specific size selected, deduct specifically for that size
+      if (item.selectedSize && updatedSizeStocks[item.selectedSize] !== undefined) {
+        const currentSizeQty = updatedSizeStocks[item.selectedSize] || 0;
+        updatedSizeStocks[item.selectedSize] = Math.max(0, currentSizeQty - item.quantity);
+        newTotalStock = Object.values(updatedSizeStocks).reduce((a, b) => (a as number) + (b as number), 0);
+      } else {
+        newTotalStock = Math.max(0, newTotalStock - item.quantity);
+      }
+
+      await supabase
+        .from("products")
+        .update({
+          stock_quantity: newTotalStock,
+          size_stocks: updatedSizeStocks,
+          in_stock: newTotalStock > 0,
+        })
+        .eq("id", item.product.id);
+    } catch (err) {
+      console.error("Failed to deduct size-level stock:", err);
+    }
+  }
+};
+  async function handleWhatsAppOrder(e: React.FormEvent) {
     e.preventDefault();
     if (cart.length === 0 || !customerName.trim()) return;
 
-    const phone = "254794268983";
-    let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
-    message += `─────────────────────────\n`;
-    message += `👤 *Customer Name:* ${customerName.trim()}\n`;
-    if (customerPhone.trim()) {
-      message += `📞 *Contact:* ${customerPhone.trim()}\n`;
+    setIsSubmitting(true);
+
+    try {
+      // 1. Deduct the ordered quantities from Supabase database
+      await deductCartStockFromSupabase();
+
+      // 2. Prepare WhatsApp message
+      const phone = "254794268983";
+      let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
+      message += `─────────────────────────\n`;
+      message += `👤 *Customer Name:* ${customerName.trim()}\n`;
+      if (customerPhone.trim()) {
+        message += `📞 *Contact:* ${customerPhone.trim()}\n`;
+      }
+      message += `📍 *Fulfillment:* ${deliveryOption}\n`;
+      if (deliveryNote.trim()) {
+        message += `📝 *Notes/Location:* ${deliveryNote.trim()}\n`;
+      }
+      message += `─────────────────────────\n`;
+      message += `*ORDER ITEMS:*\n\n`;
+
+      cart.forEach((item, index) => {
+        const itemSubtotal = Number(item.product.price) * item.quantity;
+        const sizeTag = item.selectedSize ? ` [Size: ${item.selectedSize}]` : "";
+        message += `${index + 1}. *${item.product.name}*${sizeTag}\n`;
+        message += `   • Qty: ${item.quantity} × KSH ${Number(item.product.price).toLocaleString()}\n`;
+        message += `   • Subtotal: KSH ${itemSubtotal.toLocaleString()}\n\n`;
+      });
+
+      message += `─────────────────────────\n`;
+      message += `*Total Units:* ${totalItems}\n`;
+      message += `*Total Order Value:* KSH ${totalPrice.toLocaleString()}\n`;
+      message += `─────────────────────────\n`;
+      message += `Please confirm stock reservation and payment details!`;
+
+      const encoded = encodeURIComponent(message);
+      window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
+
+      // 3. Clear cart and navigate to success screen
+      clearCart();
+      setStep("success");
+    } catch (err) {
+      console.error("Order processing error:", err);
+      alert("There was an issue processing your order. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-    message += `📍 *Fulfillment:* ${deliveryOption}\n`;
-    if (deliveryNote.trim()) {
-      message += `📝 *Notes/Location:* ${deliveryNote.trim()}\n`;
-    }
-    message += `─────────────────────────\n`;
-    message += `*ORDER ITEMS:*\n\n`;
-
-    cart.forEach((item, index) => {
-      const itemSubtotal = Number(item.product.price) * item.quantity;
-      const sizeTag = item.selectedSize ? ` [Size: ${item.selectedSize}]` : "";
-      message += `${index + 1}. *${item.product.name}*${sizeTag}\n`;
-      message += `   • Qty: ${item.quantity} × KSH ${Number(item.product.price).toLocaleString()}\n`;
-      message += `   • Subtotal: KSH ${itemSubtotal.toLocaleString()}\n\n`;
-    });
-
-    message += `─────────────────────────\n`;
-    message += `*Total Units:* ${totalItems}\n`;
-    message += `*Total Order Value:* KSH ${totalPrice.toLocaleString()}\n`;
-    message += `─────────────────────────\n`;
-    message += `Please confirm stock reservation and payment details!`;
-
-    const encoded = encodeURIComponent(message);
-    window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
-
-    // 1. Clear cart so it's fresh for next time
-    clearCart();
-
-    // 2. Transition customer to the Order Success / Processing view
-    setStep("success");
-  };
+  }
 
   const resetAndClose = () => {
     setIsCartOpen(false);
@@ -154,15 +206,22 @@ export default function CartDrawer() {
                   </div>
                 ) : (
                   cart.map((item) => {
-                    const maxStock = item.product.stock_quantity ?? 1;
+                    const maxStock = item.product.stock_quantity ?? 10;
                     const itemKey = `${item.product.id}-${item.selectedSize || "default"}`;
+                    
+                    // Fallback to images array or single image_url
+                    const itemImage =
+                      (item.product.images && item.product.images.length > 0)
+                        ? item.product.images[0]
+                        : item.product.image_url || "/placeholder.png";
+
                     return (
                       <div
                         key={itemKey}
                         className="flex gap-3.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 items-center justify-between"
                       >
                         <img
-                          src={item.product.image_url}
+                          src={itemImage}
                           alt={item.product.name}
                           className="w-16 h-16 rounded-lg object-cover bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex-shrink-0"
                         />
@@ -340,13 +399,23 @@ export default function CartDrawer() {
               <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
                 <button
                   type="submit"
-                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
+                  disabled={isSubmitting}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98 disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Send Order to WhatsApp</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Reserving Stock...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Order to WhatsApp</span>
+                    </>
+                  )}
                 </button>
                 <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
-                  Opens WhatsApp with all item sizes, prices & pickup location pre-filled.
+                  Reserves store stock and opens WhatsApp with your order details pre-filled.
                 </p>
               </div>
             </form>
@@ -365,7 +434,7 @@ export default function CartDrawer() {
                     Order Submitted!
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                    Thank you, <strong className="text-slate-800 dark:text-slate-200">{customerName}</strong>! Your order has been dispatched via WhatsApp to the Elim Sports team.
+                    Thank you, <strong className="text-slate-800 dark:text-slate-200">{customerName}</strong>! Your order has been dispatched via WhatsApp to the Elim Sports team and stock has been reserved.
                   </p>
                 </div>
 
@@ -377,7 +446,7 @@ export default function CartDrawer() {
                   <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                     <p className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                      Stock reserved and awaiting confirmation on WhatsApp.
+                      Stock decremented and reserved in system.
                     </p>
                     <p className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>

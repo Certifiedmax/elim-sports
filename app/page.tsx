@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -26,69 +26,92 @@ export default function Storefront() {
   const [loading, setLoading] = useState(true);
   const [bannerText, setBannerText] = useState<string | null>(null);
 
+  // Reusable Catalog Fetcher
+  const fetchProducts = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Supabase products fetch error:", error);
+      } else if (data) {
+        setProducts(data);
+      }
+    } catch (err) {
+      console.error("Failed to load products:", err);
+    }
+  }, []);
+
+  // Reusable Banner Fetcher
+  const fetchBanner = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("store_settings")
+        .select("banner_text")
+        .eq("id", "promo_banner")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Supabase banner fetch error:", error);
+      }
+
+      if (data && data.banner_text) {
+        setBannerText(data.banner_text);
+      } else {
+        setBannerText(
+          "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
+        );
+      }
+    } catch (err) {
+      console.error("Failed to load banner:", err);
+      setBannerText(
+        "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
+      );
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
-    async function fetchCatalog() {
-      try {
-        // 1. Fetch Products
-        const { data: productData, error: productError } = await supabase
-          .from("products")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (productError) {
-          console.error("Supabase products fetch error:", productError);
-        }
-
-        if (isMounted && productData) {
-          setProducts(productData);
-        }
-      } catch (err) {
-        console.error("Failed to load products:", err);
-      }
-
-      try {
-        // 2. Fetch Dynamic Banner Ticker
-        const { data: bannerData, error: bannerError } = await supabase
-          .from("store_settings")
-          .select("banner_text")
-          .eq("id", "promo_banner")
-          .maybeSingle();
-
-        if (bannerError) {
-          console.error("Supabase banner fetch error:", bannerError);
-        }
-
-        if (isMounted) {
-          if (bannerData && bannerData.banner_text) {
-            setBannerText(bannerData.banner_text);
-          } else {
-            setBannerText(
-              "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
-            );
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load banner:", err);
-        if (isMounted) {
-          setBannerText(
-            "🔥 Special Offers: Football boots & running shoes from KSH 1,650/= | Stringing available at Moms & Dads Juja | Fast delivery available"
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
+    async function initializeCatalog() {
+      await Promise.all([fetchProducts(), fetchBanner()]);
+      if (isMounted) setLoading(false);
     }
 
-    fetchCatalog();
+    initializeCatalog();
+
+    // 1. Real-time Subscription for Live Stock & Inventory Changes
+    const productChannel = supabase
+      .channel("realtime-products")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => {
+          fetchProducts();
+        }
+      )
+      .subscribe();
+
+    // 2. Real-time Subscription for Announcement Banner Changes
+    const bannerChannel = supabase
+      .channel("realtime-banner")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "store_settings" },
+        () => {
+          fetchBanner();
+        }
+      )
+      .subscribe();
 
     return () => {
       isMounted = false;
+      supabase.removeChannel(productChannel);
+      supabase.removeChannel(bannerChannel);
     };
-  }, []);
+  }, [fetchProducts, fetchBanner]);
 
   // Filter & Sort Pipeline (Matches Name, Category, Description, and Available Sizes)
   const filteredProducts = useMemo(() => {
@@ -208,7 +231,7 @@ export default function Storefront() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
           {/* Controls Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
-            {/* Horizontally Scrollable Category Filter Pills */}
+            {/* Category Filter Pills */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
               {CATEGORIES.map((cat) => (
                 <button

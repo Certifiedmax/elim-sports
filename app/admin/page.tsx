@@ -21,11 +21,20 @@ import {
   Megaphone,
   Tag,
   Save,
+  Edit3,
+  X,
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
 const APPAREL_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "Free Size"];
 const SHOE_SIZES = ["38", "39", "40", "41", "42", "43", "44", "45", "46"];
+const CATEGORIES = [
+  "Footwear",
+  "Jerseys & Kits",
+  "Apparel & Gym",
+  "Rackets & Paddles",
+  "Accessories & Gear",
+];
 
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -36,10 +45,12 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // Live Banner State
   const [bannerText, setBannerText] = useState("");
   const [savingBanner, setSavingBanner] = useState(false);
   const [bannerSavedStatus, setBannerSavedStatus] = useState(false);
 
+  // Create Product Form State
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Footwear");
   const [price, setPrice] = useState("");
@@ -47,13 +58,46 @@ export default function AdminPage() {
   const [stockQuantity, setStockQuantity] = useState("5");
   const [description, setDescription] = useState("");
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [sizeStocks, setSizeStocks] = useState<Record<string, number>>({});
 
+  // Multi-Image Form State
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
-  const [imageUrl, setImageUrl] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [urlInputs, setUrlInputs] = useState<string[]>([""]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Edit Modal State
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editFormData, setEditFormData] = useState<{
+    name: string;
+    category: string;
+    price: string;
+    original_price: string;
+    stock_quantity: string;
+    description: string;
+    available_sizes: string[];
+    size_stocks: Record<string, number>;
+    images: string[];
+  }>({
+    name: "",
+    category: "Footwear",
+    price: "",
+    original_price: "",
+    stock_quantity: "0",
+    description: "",
+    available_sizes: [],
+    size_stocks: {},
+    images: [""],
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Quick Stock Selector Modal State
+  const [quickStockTarget, setQuickStockTarget] = useState<{
+    product: Product;
+    delta: number;
+  } | null>(null);
 
   useEffect(() => {
     const sessionAuth = sessionStorage.getItem("elim_admin_auth");
@@ -69,10 +113,59 @@ export default function AdminPage() {
     }
   }, [isAuthenticated]);
 
+  // Size toggle & per-size stock handler for Creation form
   const toggleSize = (size: string) => {
-    setSelectedSizes((prev) =>
-      prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size]
-    );
+    if (selectedSizes.includes(size)) {
+      setSelectedSizes((prev) => prev.filter((s) => s !== size));
+      setSizeStocks((prev) => {
+        const next = { ...prev };
+        delete next[size];
+        return next;
+      });
+    } else {
+      setSelectedSizes((prev) => [...prev, size]);
+      setSizeStocks((prev) => ({ ...prev, [size]: 1 }));
+    }
+  };
+
+  const handleSizeStockChange = (size: string, qty: number) => {
+    setSizeStocks((prev) => ({
+      ...prev,
+      [size]: Math.max(0, qty),
+    }));
+  };
+
+  // Size toggle & per-size stock handler for Edit form
+  const toggleEditSize = (size: string) => {
+    setEditFormData((prev) => {
+      const exists = prev.available_sizes.includes(size);
+      const newSizes = exists
+        ? prev.available_sizes.filter((s) => s !== size)
+        : [...prev.available_sizes, size];
+
+      const newStocks = { ...prev.size_stocks };
+      if (exists) {
+        delete newStocks[size];
+      } else {
+        newStocks[size] = 1;
+      }
+
+      return {
+        ...prev,
+        available_sizes: newSizes,
+        size_stocks: newStocks,
+      };
+    });
+  };
+
+  const handleEditSizeStockChange = (size: string, qty: number) => {
+    setEditFormData((prev) => ({
+      ...prev,
+      size_stocks: {
+        ...prev.size_stocks,
+        [size]: Math.max(0, qty),
+      },
+    }));
   };
 
   const handlePinSubmit = (e: React.FormEvent) => {
@@ -138,73 +231,89 @@ export default function AdminPage() {
     setSavingBanner(false);
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Create Form Image Handling
+  const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
+    const remainingSlots = 4 - selectedFiles.length;
+    const filesToAdd = files.slice(0, remainingSlots);
+    const newPreviews = filesToAdd.map((file) => URL.createObjectURL(file));
 
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
+    setSelectedFiles((prev) => [...prev, ...filesToAdd]);
+    setPreviewUrls((prev) => [...prev, ...newPreviews]);
   };
 
-  const handleClearSelectedFile = () => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    if (galleryInputRef.current) galleryInputRef.current.value = "";
-    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  const removeSelectedFile = (idx: number) => {
+    URL.revokeObjectURL(previewUrls[idx]);
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
+    setPreviewUrls((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleUrlChange = (index: number, val: string) => {
+    const next = [...urlInputs];
+    next[index] = val;
+    setUrlInputs(next);
+  };
+
+  const addUrlSlot = () => {
+    if (urlInputs.length < 4) setUrlInputs((prev) => [...prev, ""]);
+  };
+
+  const removeUrlSlot = (index: number) => {
+    setUrlInputs((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  async function uploadFilesToSupabase(files: File[]): Promise<string[]> {
+    const uploadedUrls: string[] = [];
+    for (const file of files) {
+      const fileExt = file.name.split(".").pop() || "jpg";
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+      const filePath = `products/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(filePath, file, { cacheControl: "3600", upsert: false });
+
+      if (uploadError) throw new Error("Upload error: " + uploadError.message);
+
+      const { data } = supabase.storage.from("product-images").getPublicUrl(filePath);
+      uploadedUrls.push(data.publicUrl);
+    }
+    return uploadedUrls;
+  }
+
+  // Handle Add Product
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) return;
 
-    let finalImageUrl = imageUrl.trim();
     setSubmitting(true);
-
     try {
+      let finalImages: string[] = [];
+
       if (imageMode === "upload") {
-        if (!selectedFile) {
-          alert("Please select a photo from your gallery or take one using the camera.");
+        if (selectedFiles.length === 0) {
+          alert("Please upload at least 1 photo for this product.");
           setSubmitting(false);
           return;
         }
-
-        const fileExt = selectedFile.name.split(".").pop() || "jpg";
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const filePath = `products/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("product-images")
-          .upload(filePath, selectedFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new Error("Image upload error: " + uploadError.message);
-        }
-
-        const { data: publicUrlData } = supabase.storage
-          .from("product-images")
-          .getPublicUrl(filePath);
-
-        finalImageUrl = publicUrlData.publicUrl;
+        finalImages = await uploadFilesToSupabase(selectedFiles);
       } else {
-        if (!finalImageUrl) {
-          alert("Please provide a valid image link.");
+        finalImages = urlInputs.map((u) => u.trim()).filter((u) => u.length > 0);
+        if (finalImages.length === 0) {
+          alert("Please provide at least 1 valid image URL.");
           setSubmitting(false);
           return;
         }
       }
 
-      const qty = Math.max(0, parseInt(stockQuantity, 10) || 0);
+      const calculatedQty = selectedSizes.length > 0
+        ? Object.values(sizeStocks).reduce((a, b) => a + b, 0)
+        : Math.max(0, parseInt(stockQuantity, 10) || 0);
+
       const regularPrice = originalPrice ? Number(originalPrice) : null;
+      const primaryImage = finalImages[0];
 
       const { error: insertError } = await supabase.from("products").insert([
         {
@@ -212,26 +321,29 @@ export default function AdminPage() {
           category,
           price: Number(price),
           original_price: regularPrice,
-          stock_quantity: qty,
-          image_url: finalImageUrl,
-          description: description.trim(),
-          in_stock: qty > 0,
+          stock_quantity: calculatedQty,
+          size_stocks: sizeStocks,
           available_sizes: selectedSizes,
+          image_url: primaryImage,
+          images: finalImages,
+          description: description.trim(),
+          in_stock: calculatedQty > 0,
         },
       ]);
 
-      if (insertError) {
-        throw new Error("Database insert error: " + insertError.message);
-      }
+      if (insertError) throw new Error("Database insert error: " + insertError.message);
 
       setName("");
       setPrice("");
       setOriginalPrice("");
       setStockQuantity("5");
-      setImageUrl("");
       setDescription("");
       setSelectedSizes([]);
-      handleClearSelectedFile();
+      setSizeStocks({});
+      setUrlInputs([""]);
+      previewUrls.forEach((u) => URL.revokeObjectURL(u));
+      setSelectedFiles([]);
+      setPreviewUrls([]);
 
       await loadProducts();
     } catch (err: any) {
@@ -241,24 +353,73 @@ export default function AdminPage() {
     }
   }
 
-  async function updateStock(id: string, currentQty: number, delta: number) {
-    const newQty = Math.max(0, (currentQty || 0) + delta);
+  // Quick Stock Stepper Logic (Checks for size variants)
+  async function handleQuickStockClick(product: Product, delta: number) {
+    const currentSizes = product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
+
+    if (currentSizes.length > 0) {
+      setQuickStockTarget({ product, delta });
+      return;
+    }
+
+    const currentQty = product.stock_quantity ?? (product.in_stock ? 1 : 0);
+    const newQty = Math.max(0, currentQty + delta);
     const inStock = newQty > 0;
 
     const { error } = await supabase
       .from("products")
       .update({ stock_quantity: newQty, in_stock: inStock })
-      .eq("id", id);
+      .eq("id", product.id);
 
     if (!error) {
       setProducts((prev) =>
         prev.map((p) =>
-          p.id === id ? { ...p, stock_quantity: newQty, in_stock: inStock } : p
+          p.id === product.id ? { ...p, stock_quantity: newQty, in_stock: inStock } : p
         )
       );
     }
   }
 
+  // Applies size adjustment from the mini popup
+  async function applySizeStockChange(selectedSize: string) {
+    if (!quickStockTarget) return;
+    const { product, delta } = quickStockTarget;
+
+    const currentStocks: Record<string, number> = { ...(product.size_stocks || {}) };
+    const currentSizeQty = currentStocks[selectedSize] ?? 1;
+    const newSizeQty = Math.max(0, currentSizeQty + delta);
+
+    currentStocks[selectedSize] = newSizeQty;
+    const updatedTotalStock = Object.values(currentStocks).reduce((a, b) => a + b, 0);
+
+    const { error } = await supabase
+      .from("products")
+      .update({
+        size_stocks: currentStocks,
+        stock_quantity: updatedTotalStock,
+        in_stock: updatedTotalStock > 0,
+      })
+      .eq("id", product.id);
+
+    if (!error) {
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id
+            ? {
+                ...p,
+                size_stocks: currentStocks,
+                stock_quantity: updatedTotalStock,
+                in_stock: updatedTotalStock > 0,
+              }
+            : p
+        )
+      );
+    }
+
+    setQuickStockTarget(null);
+  }
+
+  // Delete Product
   async function deleteProduct(id: string) {
     if (!confirm("Are you sure you want to delete this item?")) return;
     const { error } = await supabase.from("products").delete().eq("id", id);
@@ -266,6 +427,76 @@ export default function AdminPage() {
       loadProducts();
     }
   }
+
+  // Start Edit Mode
+  const handleOpenEdit = (p: Product) => {
+    const rawImages = (p.images && p.images.length > 0)
+      ? p.images
+      : p.image_url ? [p.image_url] : [""];
+
+    const currentSizes = p.available_sizes || (p.size_stocks ? Object.keys(p.size_stocks) : []);
+    
+    const initialSizeStocks: Record<string, number> = {};
+    currentSizes.forEach((sz) => {
+      initialSizeStocks[sz] = p.size_stocks?.[sz] ?? (p.stock_quantity ? Math.floor(p.stock_quantity / currentSizes.length) || 1 : 1);
+    });
+
+    setEditFormData({
+      name: p.name,
+      category: p.category,
+      price: String(p.price),
+      original_price: p.original_price ? String(p.original_price) : "",
+      stock_quantity: String(p.stock_quantity ?? (p.in_stock ? 10 : 0)),
+      description: p.description || "",
+      available_sizes: currentSizes,
+      size_stocks: p.size_stocks && Object.keys(p.size_stocks).length > 0 ? p.size_stocks : initialSizeStocks,
+      images: rawImages,
+    });
+    setEditingProduct(p);
+  };
+
+  // Save Product Edits to Supabase
+  const handleSaveProductEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    setSavingEdit(true);
+    try {
+      const cleanImages = editFormData.images.map((u) => u.trim()).filter((u) => u.length > 0);
+      const primaryImage = cleanImages[0] || editingProduct.image_url || "/placeholder.png";
+
+      const hasSizes = editFormData.available_sizes.length > 0;
+      const totalQty = hasSizes
+        ? Object.values(editFormData.size_stocks).reduce((a, b) => a + b, 0)
+        : Math.max(0, parseInt(editFormData.stock_quantity, 10) || 0);
+
+      const { error } = await supabase
+        .from("products")
+        .update({
+          name: editFormData.name.trim(),
+          category: editFormData.category,
+          price: Number(editFormData.price),
+          original_price: editFormData.original_price ? Number(editFormData.original_price) : null,
+          stock_quantity: totalQty,
+          size_stocks: editFormData.size_stocks,
+          in_stock: totalQty > 0,
+          description: editFormData.description.trim(),
+          available_sizes: editFormData.available_sizes,
+          images: cleanImages,
+          image_url: primaryImage,
+        })
+        .eq("id", editingProduct.id);
+
+      if (error) throw new Error("Update error: " + error.message);
+
+      setEditingProduct(null);
+      await loadProducts();
+    } catch (err: any) {
+      alert(err.message || "Failed to update product.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   if (!isAuthenticated) {
     return (
@@ -341,13 +572,19 @@ export default function AdminPage() {
     (p) => (p.stock_quantity ?? (p.in_stock ? 1 : 0)) === 0
   ).length;
 
-  // Flexible category checks so sizes always show
   const isFootwear = category.toLowerCase().includes("footwear") || category.toLowerCase().includes("boot");
   const isApparelOrJersey = 
     category.toLowerCase().includes("jersey") || 
     category.toLowerCase().includes("apparel") || 
     category.toLowerCase().includes("gym") ||
     category.toLowerCase().includes("kit");
+
+  const isEditFootwear = editFormData.category.toLowerCase().includes("footwear") || editFormData.category.toLowerCase().includes("boot");
+  const isEditApparelOrJersey = 
+    editFormData.category.toLowerCase().includes("jersey") || 
+    editFormData.category.toLowerCase().includes("apparel") || 
+    editFormData.category.toLowerCase().includes("gym") ||
+    editFormData.category.toLowerCase().includes("kit");
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans p-4 sm:p-8 transition-colors duration-300">
@@ -365,10 +602,10 @@ export default function AdminPage() {
             </Link>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-                Elim Sports Inventory & Offers
+                Elim Sports Inventory & Admin
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track exact stock quantities, set sale discounts, and edit sizes
+                Manage per-size quantities, multi-photo angles, discounts, and active listings
               </p>
             </div>
           </div>
@@ -440,7 +677,7 @@ export default function AdminPage() {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-6 h-fit space-y-4 shadow-sm">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <Plus className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              Add Inventory Item & Set Sale Price
+              Add Product & Set Sizes
             </h2>
 
             <form onSubmit={handleAddProduct} className="space-y-3.5 text-xs">
@@ -451,7 +688,7 @@ export default function AdminPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Nike Mercurial Boots / Chelsea Home Jersey"
+                  placeholder="e.g. Kawasaki Badminton Shoes"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -468,28 +705,28 @@ export default function AdminPage() {
                     onChange={(e) => {
                       setCategory(e.target.value);
                       setSelectedSizes([]);
+                      setSizeStocks({});
                     }}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition font-medium"
                   >
-                    <option value="Footwear">Footwear (Boots & Running)</option>
-                    <option value="Jerseys & Kits">Jerseys & Kits (Football, Matchwear)</option>
-                    <option value="Apparel & Gym">Apparel & Gym (Tracksuits, Tights, Bras)</option>
-                    <option value="Rackets & Paddles">Rackets & Paddles (Badminton, Tennis)</option>
-                    <option value="Accessories & Gear">Accessories & Gear (Grips, Shuttles)</option>
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
-                    Initial Stock
+                    {selectedSizes.length > 0 ? "Total Stock (Auto-Sum)" : "Stock Quantity"}
                   </label>
                   <input
                     type="number"
                     min="0"
                     required
-                    value={stockQuantity}
+                    disabled={selectedSizes.length > 0}
+                    value={selectedSizes.length > 0 ? Object.values(sizeStocks).reduce((a, b) => a + b, 0) : stockQuantity}
                     onChange={(e) => setStockQuantity(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold focus:outline-none focus:border-emerald-500 transition"
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -503,7 +740,7 @@ export default function AdminPage() {
                   <input
                     type="number"
                     required
-                    placeholder="e.g. 4500"
+                    placeholder="e.g. 1600"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-emerald-500 transition"
@@ -517,7 +754,7 @@ export default function AdminPage() {
                   </label>
                   <input
                     type="number"
-                    placeholder="Optional (e.g. 5500)"
+                    placeholder="Optional discount"
                     value={originalPrice}
                     onChange={(e) => setOriginalPrice(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -525,23 +762,27 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* SIZES SELECTOR */}
+              {/* SIZES SELECTOR & EXACT QUANTITY BREAKDOWN */}
               {(isFootwear || isApparelOrJersey) && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-slate-700 dark:text-slate-300 font-bold text-xs">
-                      Available Sizes (Tap to pick):
+                      Available Sizes & Pairs per Size:
                     </label>
                     {selectedSizes.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setSelectedSizes([])}
+                        onClick={() => {
+                          setSelectedSizes([]);
+                          setSizeStocks({});
+                        }}
                         className="text-[10px] text-rose-500 hover:underline font-bold cursor-pointer"
                       >
-                        Clear ({selectedSizes.length})
+                        Clear All
                       </button>
                     )}
                   </div>
+
                   <div className="flex flex-wrap gap-1.5">
                     {(isFootwear ? SHOE_SIZES : APPAREL_SIZES).map((sz) => {
                       const isSelected = selectedSizes.includes(sz);
@@ -561,13 +802,38 @@ export default function AdminPage() {
                       );
                     })}
                   </div>
+
+                  {selectedSizes.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Set stock count for each size:
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {selectedSizes.map((sz) => (
+                          <div key={sz} className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Size {sz}:</span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={sizeStocks[sz] ?? 1}
+                                onChange={(e) => handleSizeStockChange(sz, parseInt(e.target.value, 10) || 0)}
+                                className="w-12 text-center text-xs font-black bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-1 text-emerald-600 dark:text-emerald-400 focus:outline-none"
+                              />
+                              <span className="text-[10px] text-slate-400 font-semibold">prs</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Image Source Selection */}
+              {/* Multi-Image Source Selection */}
               <div>
                 <label className="block text-slate-600 dark:text-slate-400 mb-1.5 font-semibold">
-                  Image Source
+                  Product Photos (Up to 4 angles)
                 </label>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <button
@@ -580,7 +846,7 @@ export default function AdminPage() {
                     }`}
                   >
                     <Camera className="w-3.5 h-3.5" />
-                    <span>Upload Image</span>
+                    <span>Upload ({selectedFiles.length}/4)</span>
                   </button>
 
                   <button
@@ -593,28 +859,30 @@ export default function AdminPage() {
                     }`}
                   >
                     <LinkIcon className="w-3.5 h-3.5" />
-                    <span>Web Link</span>
+                    <span>Web Links</span>
                   </button>
                 </div>
 
                 {imageMode === "upload" ? (
                   <div className="space-y-3">
-                    {previewUrl ? (
-                      <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 group">
-                        <img
-                          src={previewUrl}
-                          alt="Preview"
-                          className="w-full h-full object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleClearSelectedFile}
-                          className="absolute top-2 right-2 p-2 rounded-xl bg-rose-600 text-white shadow-md cursor-pointer active:scale-90"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                    {previewUrls.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {previewUrls.map((url, idx) => (
+                          <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950">
+                            <img src={url} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeSelectedFile(idx)}
+                              className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-rose-600 text-white shadow cursor-pointer active:scale-90"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ) : (
+                    )}
+
+                    {selectedFiles.length < 4 && (
                       <div className="grid grid-cols-2 gap-2.5">
                         <label
                           htmlFor="gallery-upload"
@@ -622,14 +890,15 @@ export default function AdminPage() {
                         >
                           <UploadCloud className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition mb-1" />
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
-                            Photo Gallery
+                            Add from Gallery
                           </span>
                           <input
                             id="gallery-upload"
                             ref={galleryInputRef}
                             type="file"
+                            multiple
                             accept="image/*"
-                            onChange={handleFileChange}
+                            onChange={handleFilesSelect}
                             className="sr-only"
                           />
                         </label>
@@ -640,7 +909,7 @@ export default function AdminPage() {
                         >
                           <Camera className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition mb-1" />
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
-                            Take Photo
+                            Snap Photo
                           </span>
                           <input
                             id="camera-snap"
@@ -648,7 +917,7 @@ export default function AdminPage() {
                             type="file"
                             accept="image/*"
                             capture="environment"
-                            onChange={handleFileChange}
+                            onChange={handleFilesSelect}
                             className="sr-only"
                           />
                         </label>
@@ -656,13 +925,37 @@ export default function AdminPage() {
                     )}
                   </div>
                 ) : (
-                  <input
-                    type="url"
-                    placeholder="https://..."
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
-                  />
+                  <div className="space-y-2">
+                    {urlInputs.map((url, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          type="url"
+                          placeholder={`Photo URL #${idx + 1}`}
+                          value={url}
+                          onChange={(e) => handleUrlChange(idx, e.target.value)}
+                          className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition text-xs"
+                        />
+                        {urlInputs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeUrlSlot(idx)}
+                            className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {urlInputs.length < 4 && (
+                      <button
+                        type="button"
+                        onClick={addUrlSlot}
+                        className="text-emerald-500 font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer pt-1"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Another URL
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -707,6 +1000,7 @@ export default function AdminPage() {
                   const isOutOfStock = qty === 0;
                   const isLowStock = qty > 0 && qty <= 2;
                   const hasDiscount = p.original_price && Number(p.original_price) > Number(p.price);
+                  const photoCount = (p.images && p.images.length > 0) ? p.images.length : (p.image_url ? 1 : 0);
 
                   return (
                     <div
@@ -714,11 +1008,19 @@ export default function AdminPage() {
                       className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 gap-3 transition"
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <img
-                          src={p.image_url}
-                          alt={p.name}
-                          className="w-12 h-12 rounded-xl object-cover bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex-shrink-0"
-                        />
+                        <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0">
+                          <img
+                            src={(p.images && p.images[0]) || p.image_url || "/placeholder.png"}
+                            alt={p.name}
+                            className="w-full h-full object-cover"
+                          />
+                          {photoCount > 1 && (
+                            <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[8px] font-bold px-1 rounded">
+                              {photoCount}📷
+                            </span>
+                          )}
+                        </div>
+
                         <div className="min-w-0">
                           <span className="font-semibold text-slate-900 dark:text-white text-xs block truncate">
                             {p.name}
@@ -736,29 +1038,38 @@ export default function AdminPage() {
                               {p.category}
                             </span>
                           </div>
+
                           {p.available_sizes && p.available_sizes.length > 0 && (
                             <div className="flex items-center gap-1 mt-1">
                               <span className="text-[9px] text-slate-400">Sizes:</span>
                               <div className="flex gap-1 flex-wrap">
-                                {p.available_sizes.map((sz) => (
-                                  <span
-                                    key={sz}
-                                    className="text-[9px] px-1 py-0.2 bg-slate-200 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300"
-                                  >
-                                    {sz}
-                                  </span>
-                                ))}
+                                {p.available_sizes.map((sz) => {
+                                  const sizeStock = p.size_stocks?.[sz];
+                                  return (
+                                    <span
+                                      key={sz}
+                                      className={`text-[9px] px-1 py-0.2 rounded font-semibold ${
+                                        sizeStock === 0
+                                          ? "bg-rose-100 dark:bg-rose-950 text-rose-500 line-through"
+                                          : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                      }`}
+                                    >
+                                      {sz} {sizeStock !== undefined && `(${sizeStock})`}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0 border-t sm:border-t-0 pt-2.5 sm:pt-0 border-slate-200 dark:border-slate-800">
-                        <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+                      <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 border-t sm:border-t-0 pt-2.5 sm:pt-0 border-slate-200 dark:border-slate-800">
+                        {/* Quick Stock Controls */}
+                        <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
                           <button
                             type="button"
-                            onClick={() => updateStock(p.id, qty, -1)}
+                            onClick={() => handleQuickStockClick(p, -1)}
                             disabled={qty === 0}
                             className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-30 cursor-pointer transition"
                             title="Decrease Stock"
@@ -767,7 +1078,7 @@ export default function AdminPage() {
                           </button>
 
                           <span
-                            className={`px-2 text-xs font-black min-w-[3rem] text-center ${
+                            className={`px-1.5 text-xs font-black min-w-[2.5rem] text-center ${
                               isOutOfStock
                                 ? "text-rose-500"
                                 : isLowStock
@@ -775,12 +1086,12 @@ export default function AdminPage() {
                                 : "text-slate-900 dark:text-white"
                             }`}
                           >
-                            {qty} {qty === 1 ? "unit" : "units"}
+                            {qty}
                           </span>
 
                           <button
                             type="button"
-                            onClick={() => updateStock(p.id, qty, 1)}
+                            onClick={() => handleQuickStockClick(p, 1)}
                             className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition"
                             title="Increase Stock"
                           >
@@ -788,22 +1099,18 @@ export default function AdminPage() {
                           </button>
                         </div>
 
-                        <div className="min-w-[75px] text-right">
-                          {isOutOfStock ? (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
-                              Sold Out
-                            </span>
-                          ) : isLowStock ? (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                              Low Stock
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                              In Stock
-                            </span>
-                          )}
-                        </div>
+                        {/* Edit Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(p)}
+                          className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-500 hover:text-black text-slate-600 dark:text-slate-300 transition text-xs font-bold flex items-center gap-1 cursor-pointer"
+                          title="Edit Details & Photos"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
 
+                        {/* Delete Button */}
                         <button
                           type="button"
                           onClick={() => deleteProduct(p.id)}
@@ -821,6 +1128,284 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {/* Quick Size Selection Mini-Modal */}
+      {quickStockTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+          <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2.5">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 dark:text-white">
+                  {quickStockTarget.delta > 0 ? "Add +1 Pair to Size" : "Remove -1 Pair from Size"}
+                </h3>
+                <p className="text-[11px] text-slate-500 truncate max-w-[220px]">
+                  {quickStockTarget.product.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickStockTarget(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                Select which size to {quickStockTarget.delta > 0 ? "increase" : "decrease"}:
+              </p>
+
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  quickStockTarget.product.available_sizes ||
+                  (quickStockTarget.product.size_stocks ? Object.keys(quickStockTarget.product.size_stocks) : [])
+                ).map((sz) => {
+                  const currentCount = quickStockTarget.product.size_stocks?.[sz] ?? 0;
+                  const isButtonDisabled = quickStockTarget.delta < 0 && currentCount <= 0;
+
+                  return (
+                    <button
+                      key={sz}
+                      type="button"
+                      disabled={isButtonDisabled}
+                      onClick={() => applySizeStockChange(sz)}
+                      className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 hover:bg-emerald-500 hover:text-black dark:hover:bg-emerald-500 dark:hover:text-black transition flex flex-col items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed group"
+                    >
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-black">
+                        Size {sz}
+                      </span>
+                      <span className="text-[10px] text-slate-500 group-hover:text-black font-semibold">
+                        ({currentCount} currently)
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Product Edit Modal */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <div className="relative w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h2 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-emerald-500" />
+                Edit Product: {editingProduct.name}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProductEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                  Product Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                    Category
+                  </label>
+                  <select
+                    value={editFormData.category}
+                    onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                    {editFormData.available_sizes.length > 0 ? "Total Stock (Auto-Sum)" : "Stock Units"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    disabled={editFormData.available_sizes.length > 0}
+                    value={
+                      editFormData.available_sizes.length > 0
+                        ? Object.values(editFormData.size_stocks).reduce((a, b) => a + b, 0)
+                        : editFormData.stock_quantity
+                    }
+                    onChange={(e) => setEditFormData({ ...editFormData, stock_quantity: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white font-bold disabled:opacity-60"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                    Sale Price (KSH)
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={editFormData.price}
+                    onChange={(e) => setEditFormData({ ...editFormData, price: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-emerald-600 dark:text-emerald-400 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                    Regular Price (KSH)
+                  </label>
+                  <input
+                    type="number"
+                    value={editFormData.original_price}
+                    onChange={(e) => setEditFormData({ ...editFormData, original_price: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Edit Available Sizes & Size Quantities */}
+              {(isEditFootwear || isEditApparelOrJersey) && (
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2.5">
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold">
+                    Edit Sizes & Stock Breakdown:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(isEditFootwear ? SHOE_SIZES : APPAREL_SIZES).map((sz) => {
+                      const isSelected = editFormData.available_sizes.includes(sz);
+                      return (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => toggleEditSize(sz)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            isSelected
+                              ? "bg-emerald-500 text-black ring-2 ring-emerald-400"
+                              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {editFormData.available_sizes.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Edit Pairs per Size:
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {editFormData.available_sizes.map((sz) => (
+                          <div key={sz} className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Size {sz}:</span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min="0"
+                                value={editFormData.size_stocks[sz] ?? 1}
+                                onChange={(e) => handleEditSizeStockChange(sz, parseInt(e.target.value, 10) || 0)}
+                                className="w-12 text-center text-xs font-black bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg py-1 text-emerald-600 dark:text-emerald-400 focus:outline-none"
+                              />
+                              <span className="text-[10px] text-slate-400 font-semibold">prs</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Edit Photo URLs */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <label className="block text-slate-600 dark:text-slate-400 font-semibold">
+                    Photo URLs (Up to 4)
+                  </label>
+                  {editFormData.images.length < 4 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditFormData({ ...editFormData, images: [...editFormData.images, ""] })}
+                      className="text-emerald-500 font-bold hover:underline cursor-pointer"
+                    >
+                      + Add URL
+                    </button>
+                  )}
+                </div>
+
+                {editFormData.images.map((url, idx) => (
+                  <div key={idx} className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={url}
+                      onChange={(e) => {
+                        const next = [...editFormData.images];
+                        next[idx] = e.target.value;
+                        setEditFormData({ ...editFormData, images: next });
+                      }}
+                      className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-slate-900 dark:text-white text-xs"
+                      placeholder={`Photo URL #${idx + 1}`}
+                    />
+                    {editFormData.images.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditFormData({
+                            ...editFormData,
+                            images: editFormData.images.filter((_, i) => i !== idx),
+                          })
+                        }
+                        className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
+                  Specs & Description
+                </label>
+                <textarea
+                  rows={2}
+                  value={editFormData.description}
+                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer"
+              >
+                {savingEdit ? "Saving Updates..." : "Save Product Updates"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
