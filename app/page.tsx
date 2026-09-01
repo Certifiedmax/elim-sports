@@ -14,15 +14,15 @@ const CATEGORIES = [
   "Jerseys & Kits",
   "Apparel & Gym",
   "Accessories & Gear",
-];
+] as const;
+
+type SortOption = "featured" | "price-asc" | "price-desc" | "in-stock" | "discount";
 
 export default function Storefront() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<
-    "featured" | "price-asc" | "price-desc" | "in-stock" | "discount"
-  >("featured");
+  const [sortBy, setSortBy] = useState<SortOption>("featured");
   const [loading, setLoading] = useState(true);
   const [bannerText, setBannerText] = useState<string | null>(null);
 
@@ -90,7 +90,7 @@ export default function Storefront() {
     };
   }, []);
 
-  // Filter & Sort Pipeline
+  // Filter & Sort Pipeline (Matches Name, Category, Description, and Available Sizes)
   const filteredProducts = useMemo(() => {
     return products
       .filter((product) => {
@@ -98,12 +98,16 @@ export default function Storefront() {
           selectedCategory === "All" || product.category === selectedCategory;
 
         const q = searchQuery.toLowerCase().trim();
+        const matchesSizes =
+          product.available_sizes &&
+          product.available_sizes.some((sz) => sz.toLowerCase() === q);
+
         const matchesSearch =
           !q ||
           product.name.toLowerCase().includes(q) ||
           product.category.toLowerCase().includes(q) ||
-          (product.description &&
-            product.description.toLowerCase().includes(q));
+          (product.description && product.description.toLowerCase().includes(q)) ||
+          matchesSizes;
 
         return matchesCategory && matchesSearch;
       })
@@ -181,7 +185,7 @@ export default function Storefront() {
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                 <input
                   type="text"
-                  placeholder="Search boots, rackets, jerseys, tracksuits, sizes..."
+                  placeholder="Search boots, rackets, jerseys, tracksuits, sizes (e.g. XL, 42)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl py-3 pl-10 pr-10 text-xs text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-emerald-500 transition"
@@ -205,7 +209,7 @@ export default function Storefront() {
           {/* Controls Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
             {/* Horizontally Scrollable Category Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
               {CATEGORIES.map((cat) => (
                 <button
                   key={cat}
@@ -228,7 +232,7 @@ export default function Storefront() {
                 <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
                 <select
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
+                  onChange={(e) => setSortBy(e.target.value as SortOption)}
                   aria-label="Sort products"
                   className="bg-transparent text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer"
                 >
