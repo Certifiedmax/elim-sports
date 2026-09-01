@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { restoreOrderStock, deductOrderStock } from "@/lib/stockHelper";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -12,7 +13,6 @@ import {
   Camera,
   Link as LinkIcon,
   UploadCloud,
-  AlertTriangle,
   Sparkles,
   Lock,
   Unlock,
@@ -31,7 +31,8 @@ import {
   Phone,
   MapPin,
   RefreshCw,
-  Layers
+  Layers,
+  XCircle
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
@@ -138,11 +139,20 @@ export default function AdminPage() {
     delta: number;
   } | null>(null);
 
+  // 1. Check server-side HTTP-only cookie authentication on mount
   useEffect(() => {
-    const sessionAuth = sessionStorage.getItem("elim_admin_auth");
-    if (sessionAuth === "true") {
-      setIsAuthenticated(true);
+    async function checkServerAuth() {
+      try {
+        const res = await fetch("/api/admin/auth");
+        const data = await res.json();
+        if (data.authenticated) {
+          setIsAuthenticated(true);
+        }
+      } catch {
+        setIsAuthenticated(false);
+      }
     }
+    checkServerAuth();
   }, []);
 
   const loadProducts = useCallback(async () => {
@@ -213,19 +223,68 @@ export default function AdminPage() {
     }
   }, [isAuthenticated, loadProducts, loadBannerText, fetchOrders]);
 
-  // Order Status Toggle
+  // 2. Server-Side Secure PIN Submit
+  const handlePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(false);
+
+    try {
+      const res = await fetch("/api/admin/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pinInput }),
+      });
+
+      if (res.ok) {
+        setIsAuthenticated(true);
+        setPinInput("");
+        fetchOrders();
+        loadProducts();
+      } else {
+        setPinError(true);
+        setPinInput("");
+      }
+    } catch {
+      setPinError(true);
+      setPinInput("");
+    }
+  };
+
+  // 3. Server-Side Secure Logout (Clears HTTP-only Cookie)
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/admin/auth", { method: "DELETE" });
+    } finally {
+      setIsAuthenticated(false);
+    }
+  };
+
+  // 4. Intelligent Order Status Toggle with Automatic Restocking
   const updateOrderStatus = async (orderId: string, nextStatus: "pending" | "completed" | "cancelled") => {
     setUpdatingOrderId(orderId);
     try {
+      const targetOrder = orders.find((o) => o.id === orderId);
+
+      if (targetOrder) {
+        // If canceling an active/pending order -> restore inventory
+        if (nextStatus === "cancelled" && targetOrder.status !== "cancelled") {
+          await restoreOrderStock(targetOrder.items);
+        }
+        // If reinstating a previously cancelled order -> re-deduct inventory
+        if (targetOrder.status === "cancelled" && nextStatus !== "cancelled") {
+          await deductOrderStock(targetOrder.items);
+        }
+      }
+
       const { error } = await supabase
         .from("orders")
         .update({ status: nextStatus })
         .eq("id", orderId);
 
       if (error) throw error;
-      await fetchOrders();
+      await Promise.all([fetchOrders(), loadProducts()]);
     } catch (err) {
-      console.error("Failed to update status:", err);
+      console.error("Failed to update order status:", err);
       alert("Could not update order status.");
     } finally {
       setUpdatingOrderId(null);
@@ -307,26 +366,6 @@ export default function AdminPage() {
         [size]: Math.max(0, qty),
       },
     }));
-  };
-
-  const handlePinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const correctPin = process.env.NEXT_PUBLIC_ADMIN_PIN || "2540";
-
-    if (pinInput === correctPin) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem("elim_admin_auth", "true");
-      setPinError(false);
-      setPinInput("");
-    } else {
-      setPinError(true);
-      setPinInput("");
-    }
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem("elim_admin_auth");
-    setIsAuthenticated(false);
   };
 
   async function handleSaveBanner(e: React.FormEvent) {
@@ -610,6 +649,7 @@ export default function AdminPage() {
     }
   };
 
+  // Lockscreen View
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans relative overflow-hidden">
@@ -680,9 +720,6 @@ export default function AdminPage() {
     (acc, p) => acc + (p.stock_quantity ?? (p.in_stock ? 1 : 0)),
     0
   );
-  const outOfStockCount = products.filter(
-    (p) => (p.stock_quantity ?? (p.in_stock ? 1 : 0)) === 0
-  ).length;
 
   const isFootwear = category.toLowerCase().includes("footwear") || category.toLowerCase().includes("boot");
   const isApparelOrJersey = 
@@ -844,7 +881,7 @@ export default function AdminPage() {
               <div>
                 <h3 className="font-bold text-sm text-white">Live Customer Orders & Payments</h3>
                 <p className="text-xs text-slate-400">
-                  Track client names, size choices, delivery notes, and mark orders as paid/completed
+                  Track client names, size choices, delivery notes, and mark orders as paid/completed or cancelled
                 </p>
               </div>
               <span className="text-xs font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800/50 px-3 py-1 rounded-xl">
@@ -961,18 +998,30 @@ export default function AdminPage() {
                               </span>
 
                               {isPending && (
-                                <button
-                                  type="button"
-                                  disabled={updatingOrderId === order.id}
-                                  onClick={() => updateOrderStatus(order.id, "completed")}
-                                  className="p-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
-                                  title="Mark as Paid / Collected"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={updatingOrderId === order.id}
+                                    onClick={() => updateOrderStatus(order.id, "completed")}
+                                    className="p-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-[11px] transition cursor-pointer disabled:opacity-40"
+                                    title="Mark as Paid / Collected"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={updatingOrderId === order.id}
+                                    onClick={() => updateOrderStatus(order.id, "cancelled")}
+                                    className="p-1.5 rounded-lg bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-400 transition cursor-pointer disabled:opacity-40"
+                                    title="Cancel & Restock Items"
+                                  >
+                                    <XCircle className="w-4 h-4" />
+                                  </button>
+                                </>
                               )}
 
-                              {isCompleted && (
+                              {(isCompleted || isCancelled) && (
                                 <button
                                   type="button"
                                   disabled={updatingOrderId === order.id}

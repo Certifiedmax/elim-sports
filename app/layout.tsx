@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "@/context/CartContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import CartDrawer from "@/components/CartDrawer";
+import ActiveOrderBanner from "@/components/ActiveOrderBanner";
 
 export const metadata: Metadata = {
   title: "Elim Sports | Authentic Boots, Rackets, Jerseys & Gear",
@@ -30,6 +31,7 @@ export default function RootLayout({
           <CartProvider>
             {children}
             <CartDrawer />
+            <ActiveOrderBanner />
           </CartProvider>
         </ThemeProvider>
       </body>

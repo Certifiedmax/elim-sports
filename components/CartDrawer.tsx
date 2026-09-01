@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { supabase } from "@/lib/supabase";
+import { deductOrderStock } from "@/lib/stockHelper";
 import { 
   X, 
   Trash2, 
@@ -18,7 +19,8 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from "lucide-react";
 
 export default function CartDrawer() {
@@ -33,8 +35,8 @@ export default function CartDrawer() {
     totalPrice,
   } = useCart();
 
-  // 3 Steps: 'cart' | 'details' | 'success'
-  const [step, setStep] = useState<"cart" | "details" | "success">("cart");
+  // 4 Steps: 'cart' | 'details' | 'review' | 'success'
+  const [step, setStep] = useState<"cart" | "details" | "review" | "success">("cart");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Customer Delivery Info State
@@ -45,69 +47,33 @@ export default function CartDrawer() {
 
   if (!isCartOpen) return null;
 
-  // Deducts exact ordered quantities from Supabase database per size
-  const deductCartStockFromSupabase = async () => {
-    for (const item of cart) {
-      try {
-        const { data: product, error: fetchErr } = await supabase
-          .from("products")
-          .select("stock_quantity, in_stock, size_stocks")
-          .eq("id", item.product.id)
-          .single();
-
-        if (fetchErr || !product) {
-          console.error("Could not find product for deduction:", item.product.id);
-          continue;
-        }
-
-        let updatedSizeStocks = { ...(product.size_stocks || {}) };
-        let newTotalStock = product.stock_quantity ?? (product.in_stock ? 10 : 0);
-
-        if (item.selectedSize && updatedSizeStocks[item.selectedSize] !== undefined) {
-          const currentSizeQty = updatedSizeStocks[item.selectedSize] || 0;
-          updatedSizeStocks[item.selectedSize] = Math.max(0, currentSizeQty - item.quantity);
-          newTotalStock = Object.values(updatedSizeStocks).reduce((a, b) => (a as number) + (b as number), 0);
-        } else {
-          newTotalStock = Math.max(0, newTotalStock - item.quantity);
-        }
-
-        await supabase
-          .from("products")
-          .update({
-            stock_quantity: newTotalStock,
-            size_stocks: updatedSizeStocks,
-            in_stock: newTotalStock > 0,
-          })
-          .eq("id", item.product.id);
-      } catch (err) {
-        console.error("Failed to deduct stock for product:", item.product.id, err);
-      }
-    }
+  // Step transition to Review screen
+  const handleProceedToReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customerName.trim() || cart.length === 0) return;
+    setStep("review");
   };
 
-  const handleWhatsAppOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Final confirmation: Deducts stock, records order in Supabase & dispatches to WhatsApp
+  const handleFinalConfirmAndLaunchWhatsApp = async () => {
     if (cart.length === 0 || !customerName.trim()) return;
-
     setIsSubmitting(true);
 
     try {
-      // 1. Deduct stock in database
-      await deductCartStockFromSupabase();
-
-      // 2. Prepare structured items array for order logging & profit calculation
       const orderItems = cart.map((item) => ({
         product_id: item.product.id,
         name: item.product.name,
         category: item.product.category,
-        size: item.selectedSize || null,
+        size: item.selectedSize || undefined,
         quantity: item.quantity,
         price: Number(item.product.price),
-        image_url: item.product.images?.[0] || item.product.image_url || null,
       }));
 
-      // 3. Log order into Supabase orders table
-      const { error: orderInsertErr } = await supabase
+      // 1. Deduct exact stock per size from Supabase
+      await deductOrderStock(orderItems);
+
+      // 2. Insert into orders table
+      const { data: insertedOrder, error: orderInsertErr } = await supabase
         .from("orders")
         .insert([
           {
@@ -120,15 +86,31 @@ export default function CartDrawer() {
             status: "pending",
             payment_method: "M-Pesa / Cash",
           },
-        ]);
+        ])
+        .select("id, created_at")
+        .single();
 
       if (orderInsertErr) {
-        console.error("Failed to record order in orders table:", orderInsertErr);
+        console.error("Order logging error:", orderInsertErr);
       }
 
-      // 4. Construct WhatsApp Message
+      // 3. Save Active Order in LocalStorage for 10-minute edit/cancel grace window
+      if (insertedOrder) {
+        const orderSession = {
+          orderId: insertedOrder.id,
+          createdAt: insertedOrder.created_at,
+          items: orderItems,
+          customerName: customerName.trim(),
+          totalAmount: totalPrice,
+          fulfillmentMethod: deliveryOption
+        };
+        localStorage.setItem("elim_active_order", JSON.stringify(orderSession));
+        window.dispatchEvent(new Event("elim_order_placed"));
+      }
+
+      // 4. Construct Pre-filled WhatsApp message
       const phone = "254794268983";
-      let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
+      let message = `🏸 *CONFIRMED ORDER - ELIM SPORTS*\n`;
       message += `─────────────────────────\n`;
       message += `👤 *Customer Name:* ${customerName.trim()}\n`;
       if (customerPhone.trim()) {
@@ -153,7 +135,7 @@ export default function CartDrawer() {
       message += `*Total Units:* ${totalItems}\n`;
       message += `*Total Order Value:* KSH ${totalPrice.toLocaleString()}\n`;
       message += `─────────────────────────\n`;
-      message += `Please confirm stock reservation and payment details!`;
+      message += `Stock reserved via system. Please confirm order processing & payment details!`;
 
       const encoded = encodeURIComponent(message);
       window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
@@ -196,6 +178,15 @@ export default function CartDrawer() {
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
+              ) : step === "review" ? (
+                <button
+                  type="button"
+                  onClick={() => setStep("details")}
+                  className="p-1.5 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
+                  title="Back to details"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
               ) : step === "success" ? (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
               ) : (
@@ -206,6 +197,8 @@ export default function CartDrawer() {
                   ? `Shopping Cart (${totalItems})`
                   : step === "details"
                   ? "Customer & Pickup Details"
+                  : step === "review"
+                  ? "Review & Confirm Order"
                   : "Order Placed Successfully"}
               </h2>
             </div>
@@ -265,7 +258,7 @@ export default function CartDrawer() {
                             {item.product.name}
                           </h4>
                           
-                          {/* Size Pill Display */}
+                          {/* Size Pill */}
                           {item.selectedSize && (
                             <div className="inline-block px-2 py-0.5 mt-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
                               Size: {item.selectedSize}
@@ -276,7 +269,7 @@ export default function CartDrawer() {
                             KSH {Number(item.product.price).toLocaleString()}
                           </p>
 
-                          {/* Stepper with explicit size handlers */}
+                          {/* Stepper with explicit handlers */}
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5">
                               <button
@@ -307,7 +300,6 @@ export default function CartDrawer() {
                               </button>
                             </div>
 
-                            {/* Remove button explicitly targeting this item's ID & selected size */}
                             <button
                               type="button"
                               onClick={() => removeFromCart(item.product.id, item.selectedSize)}
@@ -356,7 +348,7 @@ export default function CartDrawer() {
 
           {/* Step 2: Customer Delivery Form */}
           {step === "details" && (
-            <form onSubmit={handleWhatsAppOrder} className="flex-1 flex flex-col justify-between">
+            <form onSubmit={handleProceedToReview} className="flex-1 flex flex-col justify-between">
               <div className="p-5 space-y-4 overflow-y-auto">
                 <div>
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
@@ -440,29 +432,116 @@ export default function CartDrawer() {
               <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
                 <button
                   type="submit"
+                  className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
+                >
+                  <span>Review Order Summary</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Step 3: Review & Confirmation Screen */}
+          {step === "review" && (
+            <div className="flex-1 flex flex-col justify-between overflow-hidden">
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>Please review your reservation before dispatching to WhatsApp.</span>
+                </div>
+
+                {/* Items Summary */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Reserved Items ({totalItems}):
+                  </span>
+                  <div className="space-y-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-3">
+                    {cart.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs">
+                        <div className="truncate pr-2">
+                          <strong className="text-slate-900 dark:text-white font-semibold">
+                            {item.quantity}× {item.product.name}
+                          </strong>
+                          {item.selectedSize && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-bold text-[10px]">
+                              Size {item.selectedSize}
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                          KSH {(Number(item.product.price) * item.quantity).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Delivery Information Breakdown */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Customer & Fulfillment:
+                  </span>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-1 text-xs">
+                    <p className="text-slate-700 dark:text-slate-300">
+                      <strong>Name:</strong> {customerName}
+                    </p>
+                    {customerPhone && (
+                      <p className="text-slate-700 dark:text-slate-300">
+                        <strong>Phone:</strong> {customerPhone}
+                      </p>
+                    )}
+                    <p className="text-slate-700 dark:text-slate-300">
+                      <strong>Fulfillment:</strong> {deliveryOption}
+                    </p>
+                    {deliveryNote && (
+                      <p className="text-slate-500 dark:text-slate-400 italic text-[11px]">
+                        &ldquo;{deliveryNote}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Total Payable:</span>
+                  <strong className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                    KSH {totalPrice.toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
+                <button
+                  type="button"
                   disabled={isSubmitting}
+                  onClick={handleFinalConfirmAndLaunchWhatsApp}
                   className="w-full flex items-center justify-center gap-2 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98 disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Recording & Reserving Stock...</span>
+                      <span>Reserving Stock & Launching...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Send Order to WhatsApp</span>
+                      <span>Confirm & Launch WhatsApp Order</span>
                     </>
                   )}
                 </button>
-                <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
-                  Logs order into store ledger and opens WhatsApp with your order details pre-filled.
-                </p>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setStep("cart")}
+                  className="w-full text-center text-xs text-slate-500 hover:text-slate-800 dark:hover:text-white transition py-1"
+                >
+                  ← Modify items in cart
+                </button>
               </div>
-            </form>
+            </div>
           )}
 
-          {/* Step 3: Order Submitted Screen */}
+          {/* Step 4: Order Submitted Screen */}
           {step === "success" && (
             <div className="flex-1 flex flex-col justify-between p-6 text-center">
               <div className="my-auto space-y-4">
