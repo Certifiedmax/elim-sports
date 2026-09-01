@@ -1,11 +1,11 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { Sun, Moon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 
 export default function ThemeToggle() {
-  const { setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -14,23 +14,23 @@ export default function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <div className="w-8 h-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" />
+      <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800" />
     );
   }
 
-  const isDark = resolvedTheme === "dark";
+  const currentTheme = theme === "system" ? resolvedTheme : theme;
 
   return (
     <button
       type="button"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label="Toggle theme mode"
-      className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer active:scale-95"
+      onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
+      className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 transition cursor-pointer shadow-sm flex items-center justify-center"
+      aria-label="Toggle theme"
     >
-      {isDark ? (
-        <Sun className="w-4 h-4 text-amber-400" />
+      {currentTheme === "dark" ? (
+        <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 rotate-0 hover:rotate-45" />
       ) : (
-        <Moon className="w-4 h-4 text-slate-600" />
+        <Moon className="w-4 h-4 text-slate-700 transition-transform duration-300 hover:-rotate-12" />
       )}
     </button>
   );

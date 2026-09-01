@@ -32,9 +32,13 @@ export default function Navbar() {
         </Link>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Light / Dark Mode Toggle */}
-          <ThemeToggle />
+        import ThemeToggle from "@/components/ThemeToggle";
+
+// Inside your Navbar JSX next to the Cart icon:
+<div className="flex items-center gap-2">
+  <ThemeToggle />
+  {/* Cart Button */}
+</div>
 
           {/* Cart Drawer Trigger Button */}
           <button
