@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
 export default function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -18,11 +18,21 @@ export default function ThemeToggle() {
     );
   }
 
-  const isDark = resolvedTheme === "dark";
+  // Check the actual class on the HTML tag
+  const isDark = document.documentElement.classList.contains("dark") || theme === "dark";
 
   const handleToggle = () => {
-    // Strictly switch directly to the opposite mode
-    setTheme(isDark ? "light" : "dark");
+    const nextTheme = isDark ? "light" : "dark";
+
+    // 1. Force the root HTML class directly
+    if (nextTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+
+    // 2. Persist in next-themes / localStorage
+    setTheme(nextTheme);
   };
 
   return (
@@ -30,8 +40,7 @@ export default function ThemeToggle() {
       type="button"
       onClick={handleToggle}
       className="p-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors cursor-pointer shadow-sm flex items-center justify-center active:scale-95"
-      aria-label="Toggle between dark and light mode"
-      title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+      aria-label="Toggle Theme"
     >
       {isDark ? (
         <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 hover:rotate-45" />

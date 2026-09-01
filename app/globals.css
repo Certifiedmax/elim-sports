@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
+/* 1. Tell Tailwind v4 to trigger dark: variants based on the .dark class */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 2. Color Tokens & CSS Variables */
 :root {
-  --background: #ffffff;
+  --background: #f8fafc;
   --foreground: #0f172a;
 }
 
@@ -10,11 +14,18 @@
   --foreground: #f8fafc;
 }
 
+/* 3. Base Styles & Global Transitions */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
 body {
   background-color: var(--background);
   color: var(--foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
+/* 4. Marquee Utility */
 @keyframes marquee {
   0% {
     transform: translateX(0%);
@@ -32,8 +43,9 @@ body {
 
 .animate-marquee:hover {
   animation-play-state: paused;
-};
-/* View Transition API Circular Reveal Configuration */
+}
+
+/* 5. View Transition API Circular Reveal Configuration */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
