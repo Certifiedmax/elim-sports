@@ -16,7 +16,7 @@ export default function Navbar() {
        <Link href="/" className="flex items-center gap-3 group">
   <div className="relative p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 group-hover:border-emerald-500/50 shadow-sm transition-all duration-300">
     <img
-      src="/logo.Elim Sports logo.png"
+      src="/Elim Sports logo.png"
       alt="Elim Sports Logo"
       className="w-9 h-9 object-contain rounded-xl group-hover:scale-105 transition-transform duration-300"
     />
