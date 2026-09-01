@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductCard, { Product } from "@/components/ProductCard";
+import LiveChatWidget from "@/components/LiveChatWidget";
 import { Flame, Search, SlidersHorizontal, X, Tag } from "lucide-react";
 
 const CATEGORIES = [
@@ -162,7 +163,7 @@ export default function Storefront() {
         />
       </div>
 
-      <div className="relative z-10">
+      <div className="relative z-10 flex-1">
         <Navbar />
 
         {/* Live Moving Announcement Ticker Bar */}
@@ -312,9 +313,12 @@ export default function Storefront() {
         </main>
       </div>
 
+      {/* Footer & Live WhatsApp Chat Widget */}
       <div className="relative z-10">
         <Footer />
       </div>
+
+      <LiveChatWidget />
     </div>
   );
 }

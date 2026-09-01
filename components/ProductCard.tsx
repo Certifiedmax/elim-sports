@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
-import { Plus, Check, Eye, X, AlertCircle, Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Check, Eye, X, AlertCircle, Sparkles, ChevronLeft, ChevronRight, Zap } from "lucide-react";
 
 export interface Product {
   id: string;
@@ -16,7 +16,7 @@ export interface Product {
   in_stock: boolean;
   stock_quantity?: number;
   available_sizes?: string[];
-  size_stocks?: Record<string, number>;
+  size_stocks?: Record<string, number>; // e.g. { "40": 2, "41": 0, "42": 4 }
 }
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -88,6 +88,26 @@ export default function ProductCard({ product }: { product: Product }) {
     });
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1200);
+  };
+
+  // Instant direct single-item order via WhatsApp
+  const handleBuyNow = () => {
+    if (isOutOfStock || (hasSizes && isSelectedSizeSoldOut)) return;
+
+    const phone = "254794268983";
+    const sizeTag = selectedSize ? ` [Size: ${selectedSize}]` : "";
+    let message = `🏸 *INSTANT ORDER - ELIM SPORTS*\n`;
+    message += `─────────────────────────\n`;
+    message += `Product: *${product.name}*${sizeTag}\n`;
+    message += `Category: ${product.category}\n`;
+    message += `Price: KSH ${Number(product.price).toLocaleString()}\n`;
+    message += `Fulfillment: Store Pickup (Moms & Dads Centre, Juja) / Campus Delivery\n`;
+    message += `─────────────────────────\n`;
+    message += `Please reserve this item and send confirmation!`;
+
+    const encoded = encodeURIComponent(message);
+    window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
+    setIsDetailsOpen(false);
   };
 
   const nextModalImage = () => {
@@ -421,22 +441,30 @@ export default function ProductCard({ product }: { product: Product }) {
               </span>
             </div>
 
-            {/* Dynamic Modal Action Button */}
-            <button
-              type="button"
-              onClick={() => {
-                handleAddToCart();
-                setIsDetailsOpen(false);
-              }}
-              disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
-            >
-              {isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
-                ? "Sold Out"
-                : hasSizes && selectedSize
-                ? `Add Size ${selectedSize} to Order (KSH ${Number(product.price).toLocaleString()})`
-                : `Add to Order (KSH ${Number(product.price).toLocaleString()})`}
-            </button>
+            {/* Dual Action Buttons: Add to Cart vs Direct Buy Now */}
+            <div className="grid grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  handleAddToCart();
+                  setIsDetailsOpen(false);
+                }}
+                disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
+                className="w-full py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isOutOfStock || (hasSizes && isSelectedSizeSoldOut) ? "Sold Out" : "Add to Cart"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleBuyNow}
+                disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+              >
+                <Zap className="w-3.5 h-3.5 fill-black" />
+                <span>Buy It Now</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
