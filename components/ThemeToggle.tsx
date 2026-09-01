@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
 export default function ThemeToggle() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -18,53 +18,22 @@ export default function ThemeToggle() {
     );
   }
 
-  const currentTheme = theme === "system" ? resolvedTheme : theme;
+  const isDark = resolvedTheme === "dark";
 
-  const toggleTheme = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const nextTheme = currentTheme === "dark" ? "light" : "dark";
-
-    // View Transition API smooth transition check
-    if (!document.startViewTransition) {
-      setTheme(nextTheme);
-      return;
-    }
-
-    const x = e.clientX;
-    const y = e.clientY;
-    const endRadius = Math.hypot(
-      Math.max(x, window.innerWidth - x),
-      Math.max(y, window.innerHeight - y)
-    );
-
-    const transition = document.startViewTransition(() => {
-      setTheme(nextTheme);
-    });
-
-    transition.ready.then(() => {
-      document.documentElement.animate(
-        {
-          clipPath: [
-            `circle(0px at ${x}px ${y}px)`,
-            `circle(${endRadius}px at ${x}px ${y}px)`,
-          ],
-        },
-        {
-          duration: 400,
-          easing: "ease-in-out",
-          pseudoElement: "::view-transition-new(root)",
-        }
-      );
-    });
+  const handleToggle = () => {
+    // Strictly switch directly to the opposite mode
+    setTheme(isDark ? "light" : "dark");
   };
 
   return (
     <button
       type="button"
-      onClick={toggleTheme}
-      className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors duration-200 cursor-pointer shadow-sm flex items-center justify-center active:scale-95"
-      aria-label="Toggle theme"
+      onClick={handleToggle}
+      className="p-2 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors cursor-pointer shadow-sm flex items-center justify-center active:scale-95"
+      aria-label="Toggle between dark and light mode"
+      title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
     >
-      {currentTheme === "dark" ? (
+      {isDark ? (
         <Sun className="w-4 h-4 text-amber-400 transition-transform duration-300 hover:rotate-45" />
       ) : (
         <Moon className="w-4 h-4 text-slate-700 transition-transform duration-300 hover:-rotate-12" />
