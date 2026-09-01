@@ -27,7 +27,7 @@ export default function Navbar() {
           </div>
         </Link>
 
-        {/* Actions (Admin Link, Theme Toggle, Cart Button) */}
+        {/* Actions */}
         <div className="flex items-center gap-2.5">
           <Link
             href="/admin"
