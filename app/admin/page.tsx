@@ -24,45 +24,30 @@ import {
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
-// Place them right here:
 const APPAREL_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "Free Size"];
 const SHOE_SIZES = ["38", "39", "40", "41", "42", "43", "44", "45", "46"];
 
 export default function AdminPage() {
-  // ...
-// Form State with Multi-Sport Categories
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [bannerText, setBannerText] = useState("");
+  const [savingBanner, setSavingBanner] = useState(false);
+  const [bannerSavedStatus, setBannerSavedStatus] = useState(false);
+
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Footwear");
   const [price, setPrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
   const [stockQuantity, setStockQuantity] = useState("5");
   const [description, setDescription] = useState("");
-  
-  // Add these two here:
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
 
-  const toggleSize = (size: string) => {
-    setSelectedSizes((prev) =>
-      prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size]
-    );
-  };
-
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState(false);
-
-  // Inventory State
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Banner Announcement Ticker State
-  const [bannerText, setBannerText] = useState("");
-  const [savingBanner, setSavingBanner] = useState(false);
-  const [bannerSavedStatus, setBannerSavedStatus] = useState(false);
-
-  // Image Source Switcher
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
   const [imageUrl, setImageUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -83,6 +68,12 @@ export default function AdminPage() {
       loadBannerText();
     }
   }, [isAuthenticated]);
+
+  const toggleSize = (size: string) => {
+    setSelectedSizes((prev) =>
+      prev.includes(size) ? prev.filter((s) => s !== size) : [...prev, size]
+    );
+  };
 
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,7 +142,6 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Revoke old preview to avoid memory leaks
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
     }
@@ -226,6 +216,7 @@ export default function AdminPage() {
           image_url: finalImageUrl,
           description: description.trim(),
           in_stock: qty > 0,
+          available_sizes: selectedSizes,
         },
       ]);
 
@@ -233,13 +224,13 @@ export default function AdminPage() {
         throw new Error("Database insert error: " + insertError.message);
       }
 
-      // Cleanup and Reset Form
       setName("");
       setPrice("");
       setOriginalPrice("");
       setStockQuantity("5");
       setImageUrl("");
       setDescription("");
+      setSelectedSizes([]);
       handleClearSelectedFile();
 
       await loadProducts();
@@ -269,14 +260,13 @@ export default function AdminPage() {
   }
 
   async function deleteProduct(id: string) {
-    if (!confirm("Are you sure you want to delete this equipment?")) return;
+    if (!confirm("Are you sure you want to delete this item?")) return;
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (!error) {
       loadProducts();
     }
   }
 
-  // --- PIN ACCESS GATE SCREEN ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans relative overflow-hidden">
@@ -343,7 +333,6 @@ export default function AdminPage() {
     );
   }
 
-  // --- UNLOCKED ADMIN DASHBOARD ---
   const totalUnits = products.reduce(
     (acc, p) => acc + (p.stock_quantity ?? (p.in_stock ? 1 : 0)),
     0
@@ -352,11 +341,19 @@ export default function AdminPage() {
     (p) => (p.stock_quantity ?? (p.in_stock ? 1 : 0)) === 0
   ).length;
 
+  // Flexible category checks so sizes always show
+  const isFootwear = category.toLowerCase().includes("footwear") || category.toLowerCase().includes("boot");
+  const isApparelOrJersey = 
+    category.toLowerCase().includes("jersey") || 
+    category.toLowerCase().includes("apparel") || 
+    category.toLowerCase().includes("gym") ||
+    category.toLowerCase().includes("kit");
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans p-4 sm:p-8 transition-colors duration-300">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* Top Header & Dashboard Bar */}
+        {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
           <div className="flex items-center gap-3.5">
             <Link
@@ -371,7 +368,7 @@ export default function AdminPage() {
                 Elim Sports Inventory & Offers
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Track exact stock quantities, set sale discounts, and edit the moving ticker
+                Track exact stock quantities, set sale discounts, and edit sizes
               </p>
             </div>
           </div>
@@ -404,7 +401,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Live Moving Announcement Ticker Editor */}
+        {/* Live Banner Editor */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
@@ -439,7 +436,6 @@ export default function AdminPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
           {/* Add Product Panel */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-6 h-fit space-y-4 shadow-sm">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -455,7 +451,7 @@ export default function AdminPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Nike Mercurial Boots / Astrox 7DG Racket"
+                  placeholder="e.g. Nike Mercurial Boots / Chelsea Home Jersey"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -469,14 +465,17 @@ export default function AdminPage() {
                   </label>
                   <select
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
+                    onChange={(e) => {
+                      setCategory(e.target.value);
+                      setSelectedSizes([]);
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition font-medium"
                   >
                     <option value="Footwear">Footwear (Boots & Running)</option>
-                    <option value="Rackets & Paddles">Rackets & Paddles (Badminton, Tennis, Pickleball)</option>
                     <option value="Jerseys & Kits">Jerseys & Kits (Football, Matchwear)</option>
                     <option value="Apparel & Gym">Apparel & Gym (Tracksuits, Tights, Bras)</option>
-                    <option value="Accessories & Gear">Accessories & Gear (Ropes, Grips, Shuttles)</option>
+                    <option value="Rackets & Paddles">Rackets & Paddles (Badminton, Tennis)</option>
+                    <option value="Accessories & Gear">Accessories & Gear (Grips, Shuttles)</option>
                   </select>
                 </div>
 
@@ -495,7 +494,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Price & Optional Offer Price */}
+              {/* Price Grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-600 dark:text-slate-400 mb-1 font-semibold">
@@ -525,6 +524,45 @@ export default function AdminPage() {
                   />
                 </div>
               </div>
+
+              {/* SIZES SELECTOR */}
+              {(isFootwear || isApparelOrJersey) && (
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-slate-700 dark:text-slate-300 font-bold text-xs">
+                      Available Sizes (Tap to pick):
+                    </label>
+                    {selectedSizes.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSizes([])}
+                        className="text-[10px] text-rose-500 hover:underline font-bold cursor-pointer"
+                      >
+                        Clear ({selectedSizes.length})
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(isFootwear ? SHOE_SIZES : APPAREL_SIZES).map((sz) => {
+                      const isSelected = selectedSizes.includes(sz);
+                      return (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => toggleSize(sz)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95 ${
+                            isSelected
+                              ? "bg-emerald-500 text-black shadow-sm ring-2 ring-emerald-400"
+                              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700"
+                          }`}
+                        >
+                          {sz}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Image Source Selection */}
               <div>
@@ -562,38 +600,22 @@ export default function AdminPage() {
                 {imageMode === "upload" ? (
                   <div className="space-y-3">
                     {previewUrl ? (
-                      /* Image Preview Container with Remove Action */
                       <div className="relative aspect-video w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 group">
                         <img
                           src={previewUrl}
                           alt="Preview"
                           className="w-full h-full object-cover"
                         />
-                        {/* Hover Overlay Button */}
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition duration-200">
-                          <button
-                            type="button"
-                            onClick={handleClearSelectedFile}
-                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg transition cursor-pointer active:scale-95"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Remove & Pick Another</span>
-                          </button>
-                        </div>
-                        {/* Mobile Direct Action Button */}
                         <button
                           type="button"
                           onClick={handleClearSelectedFile}
-                          aria-label="Remove image"
-                          className="sm:hidden absolute top-2 right-2 p-2 rounded-xl bg-rose-600 text-white shadow-md cursor-pointer active:scale-90"
+                          className="absolute top-2 right-2 p-2 rounded-xl bg-rose-600 text-white shadow-md cursor-pointer active:scale-90"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     ) : (
-                      /* Dual Option Picker: Gallery vs Direct Camera */
                       <div className="grid grid-cols-2 gap-2.5">
-                        {/* Option 1: Gallery / Files */}
                         <label
                           htmlFor="gallery-upload"
                           className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition text-center group"
@@ -602,7 +624,6 @@ export default function AdminPage() {
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                             Photo Gallery
                           </span>
-                          <span className="text-[9px] text-slate-400">Browse files</span>
                           <input
                             id="gallery-upload"
                             ref={galleryInputRef}
@@ -613,7 +634,6 @@ export default function AdminPage() {
                           />
                         </label>
 
-                        {/* Option 2: Direct Camera Snap */}
                         <label
                           htmlFor="camera-snap"
                           className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl cursor-pointer bg-slate-50 dark:bg-slate-950 transition text-center group"
@@ -622,7 +642,6 @@ export default function AdminPage() {
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                             Take Photo
                           </span>
-                          <span className="text-[9px] text-slate-400">Launch camera</span>
                           <input
                             id="camera-snap"
                             ref={cameraInputRef}
@@ -653,7 +672,7 @@ export default function AdminPage() {
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="Size (e.g. 40-45, S-XL), material, tension, colors..."
+                  placeholder="Material, string tension, fit details..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition"
@@ -694,7 +713,6 @@ export default function AdminPage() {
                       key={p.id}
                       className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 gap-3 transition"
                     >
-                      {/* Product Preview */}
                       <div className="flex items-center gap-3.5 min-w-0">
                         <img
                           src={p.image_url}
@@ -718,10 +736,24 @@ export default function AdminPage() {
                               {p.category}
                             </span>
                           </div>
+                          {p.available_sizes && p.available_sizes.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-[9px] text-slate-400">Sizes:</span>
+                              <div className="flex gap-1 flex-wrap">
+                                {p.available_sizes.map((sz) => (
+                                  <span
+                                    key={sz}
+                                    className="text-[9px] px-1 py-0.2 bg-slate-200 dark:bg-slate-800 rounded font-semibold text-slate-700 dark:text-slate-300"
+                                  >
+                                    {sz}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Quantity Stepper & Stock Controls */}
                       <div className="flex items-center justify-between sm:justify-end gap-3 flex-shrink-0 border-t sm:border-t-0 pt-2.5 sm:pt-0 border-slate-200 dark:border-slate-800">
                         <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm">
                           <button
@@ -756,7 +788,6 @@ export default function AdminPage() {
                           </button>
                         </div>
 
-                        {/* Badges */}
                         <div className="min-w-[75px] text-right">
                           {isOutOfStock ? (
                             <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
