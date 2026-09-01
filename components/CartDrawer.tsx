@@ -92,8 +92,41 @@ export default function CartDrawer() {
     setIsSubmitting(true);
 
     try {
+      // 1. Deduct stock in database
       await deductCartStockFromSupabase();
 
+      // 2. Prepare structured items array for order logging & profit calculation
+      const orderItems = cart.map((item) => ({
+        product_id: item.product.id,
+        name: item.product.name,
+        category: item.product.category,
+        size: item.selectedSize || null,
+        quantity: item.quantity,
+        price: Number(item.product.price),
+        image_url: item.product.images?.[0] || item.product.image_url || null,
+      }));
+
+      // 3. Log order into Supabase orders table
+      const { error: orderInsertErr } = await supabase
+        .from("orders")
+        .insert([
+          {
+            customer_name: customerName.trim(),
+            customer_phone: customerPhone.trim() || null,
+            fulfillment_method: deliveryOption,
+            delivery_notes: deliveryNote.trim() || null,
+            items: orderItems,
+            total_amount: totalPrice,
+            status: "pending",
+            payment_method: "M-Pesa / Cash",
+          },
+        ]);
+
+      if (orderInsertErr) {
+        console.error("Failed to record order in orders table:", orderInsertErr);
+      }
+
+      // 4. Construct WhatsApp Message
       const phone = "254794268983";
       let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
       message += `─────────────────────────\n`;
@@ -205,7 +238,6 @@ export default function CartDrawer() {
                   </div>
                 ) : (
                   cart.map((item) => {
-                    // Calculate individual stock limit for this specific size
                     const maxStock =
                       item.selectedSize && item.product.size_stocks?.[item.selectedSize] !== undefined
                         ? item.product.size_stocks[item.selectedSize]
@@ -414,7 +446,7 @@ export default function CartDrawer() {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Reserving Stock...</span>
+                      <span>Recording & Reserving Stock...</span>
                     </>
                   ) : (
                     <>
@@ -424,7 +456,7 @@ export default function CartDrawer() {
                   )}
                 </button>
                 <p className="text-[10px] text-center text-slate-500 dark:text-slate-400">
-                  Reserves store stock and opens WhatsApp with your order details pre-filled.
+                  Logs order into store ledger and opens WhatsApp with your order details pre-filled.
                 </p>
               </div>
             </form>
@@ -443,7 +475,7 @@ export default function CartDrawer() {
                     Order Submitted!
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
-                    Thank you, <strong className="text-slate-800 dark:text-slate-200">{customerName}</strong>! Your order has been dispatched via WhatsApp to the Elim Sports team and stock has been reserved.
+                    Thank you, <strong className="text-slate-800 dark:text-slate-200">{customerName}</strong>! Your order has been logged in the system and dispatched via WhatsApp to the Elim Sports team.
                   </p>
                 </div>
 
@@ -455,7 +487,11 @@ export default function CartDrawer() {
                   <div className="space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
                     <p className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                      Stock decremented and reserved in system.
+                      Order recorded in Elim Sports admin ledger.
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      Stock decremented and reserved in database.
                     </p>
                     <p className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>

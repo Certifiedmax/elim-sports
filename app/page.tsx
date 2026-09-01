@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductCard, { Product } from "@/components/ProductCard";
 import LiveChatWidget from "@/components/LiveChatWidget";
+import CartDrawer from "@/components/CartDrawer";
 import { Flame, Search, SlidersHorizontal, X, Tag } from "lucide-react";
 
 const CATEGORIES = [
@@ -313,7 +314,9 @@ export default function Storefront() {
         </main>
       </div>
 
-      {/* Footer & Live WhatsApp Chat Widget */}
+      {/* Cart Drawer, Footer & Live WhatsApp Chat Widget */}
+      <CartDrawer />
+
       <div className="relative z-10">
         <Footer />
       </div>
