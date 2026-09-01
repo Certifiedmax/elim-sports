@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
 import { supabase } from "@/lib/supabase";
-// ✅ Correct path:
-import { getProductImages } from "@/lib/product";import { 
+import { 
   X, 
   Trash2, 
   Plus, 
@@ -46,54 +45,55 @@ export default function CartDrawer() {
 
   if (!isCartOpen) return null;
 
-  // Atomically decrement stock in Supabase for each cart item
- const deductCartStockFromSupabase = async () => {
-  for (const item of cart) {
-    try {
-      const { data: product, error: fetchErr } = await supabase
-        .from("products")
-        .select("stock_quantity, in_stock, size_stocks")
-        .eq("id", item.product.id)
-        .single();
+  // Deducts exact ordered quantities from Supabase database per size
+  const deductCartStockFromSupabase = async () => {
+    for (const item of cart) {
+      try {
+        const { data: product, error: fetchErr } = await supabase
+          .from("products")
+          .select("stock_quantity, in_stock, size_stocks")
+          .eq("id", item.product.id)
+          .single();
 
-      if (fetchErr || !product) continue;
+        if (fetchErr || !product) {
+          console.error("Could not find product for deduction:", item.product.id);
+          continue;
+        }
 
-      let updatedSizeStocks = { ...(product.size_stocks || {}) };
-      let newTotalStock = product.stock_quantity ?? (product.in_stock ? 10 : 0);
+        let updatedSizeStocks = { ...(product.size_stocks || {}) };
+        let newTotalStock = product.stock_quantity ?? (product.in_stock ? 10 : 0);
 
-      // If item had a specific size selected, deduct specifically for that size
-      if (item.selectedSize && updatedSizeStocks[item.selectedSize] !== undefined) {
-        const currentSizeQty = updatedSizeStocks[item.selectedSize] || 0;
-        updatedSizeStocks[item.selectedSize] = Math.max(0, currentSizeQty - item.quantity);
-        newTotalStock = Object.values(updatedSizeStocks).reduce((a, b) => (a as number) + (b as number), 0);
-      } else {
-        newTotalStock = Math.max(0, newTotalStock - item.quantity);
+        if (item.selectedSize && updatedSizeStocks[item.selectedSize] !== undefined) {
+          const currentSizeQty = updatedSizeStocks[item.selectedSize] || 0;
+          updatedSizeStocks[item.selectedSize] = Math.max(0, currentSizeQty - item.quantity);
+          newTotalStock = Object.values(updatedSizeStocks).reduce((a, b) => (a as number) + (b as number), 0);
+        } else {
+          newTotalStock = Math.max(0, newTotalStock - item.quantity);
+        }
+
+        await supabase
+          .from("products")
+          .update({
+            stock_quantity: newTotalStock,
+            size_stocks: updatedSizeStocks,
+            in_stock: newTotalStock > 0,
+          })
+          .eq("id", item.product.id);
+      } catch (err) {
+        console.error("Failed to deduct stock for product:", item.product.id, err);
       }
-
-      await supabase
-        .from("products")
-        .update({
-          stock_quantity: newTotalStock,
-          size_stocks: updatedSizeStocks,
-          in_stock: newTotalStock > 0,
-        })
-        .eq("id", item.product.id);
-    } catch (err) {
-      console.error("Failed to deduct size-level stock:", err);
     }
-  }
-};
-  async function handleWhatsAppOrder(e: React.FormEvent) {
+  };
+
+  const handleWhatsAppOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0 || !customerName.trim()) return;
 
     setIsSubmitting(true);
 
     try {
-      // 1. Deduct the ordered quantities from Supabase database
       await deductCartStockFromSupabase();
 
-      // 2. Prepare WhatsApp message
       const phone = "254794268983";
       let message = `🏸 *NEW ORDER - ELIM SPORTS*\n`;
       message += `─────────────────────────\n`;
@@ -125,7 +125,6 @@ export default function CartDrawer() {
       const encoded = encodeURIComponent(message);
       window.open(`https://wa.me/${phone}?text=${encoded}`, "_blank");
 
-      // 3. Clear cart and navigate to success screen
       clearCart();
       setStep("success");
     } catch (err) {
@@ -134,7 +133,7 @@ export default function CartDrawer() {
     } finally {
       setIsSubmitting(false);
     }
-  }
+  };
 
   const resetAndClose = () => {
     setIsCartOpen(false);
@@ -206,12 +205,15 @@ export default function CartDrawer() {
                   </div>
                 ) : (
                   cart.map((item) => {
-                    const maxStock = item.product.stock_quantity ?? 10;
+                    // Calculate individual stock limit for this specific size
+                    const maxStock =
+                      item.selectedSize && item.product.size_stocks?.[item.selectedSize] !== undefined
+                        ? item.product.size_stocks[item.selectedSize]
+                        : item.product.stock_quantity ?? 10;
+
                     const itemKey = `${item.product.id}-${item.selectedSize || "default"}`;
-                    
-                    // Fallback to images array or single image_url
                     const itemImage =
-                      (item.product.images && item.product.images.length > 0)
+                      item.product.images && item.product.images.length > 0
                         ? item.product.images[0]
                         : item.product.image_url || "/placeholder.png";
 
@@ -223,7 +225,7 @@ export default function CartDrawer() {
                         <img
                           src={itemImage}
                           alt={item.product.name}
-                          className="w-16 h-16 rounded-lg object-cover bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex-shrink-0"
+                          className="w-16 h-16 rounded-lg object-cover bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0"
                         />
 
                         <div className="flex-1 min-w-0">
@@ -242,13 +244,20 @@ export default function CartDrawer() {
                             KSH {Number(item.product.price).toLocaleString()}
                           </p>
 
-                          {/* Stepper */}
+                          {/* Stepper with explicit size handlers */}
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5">
                               <button
                                 type="button"
-                                onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.selectedSize)}
+                                onClick={() => {
+                                  if (item.quantity === 1) {
+                                    removeFromCart(item.product.id, item.selectedSize);
+                                  } else {
+                                    updateQuantity(item.product.id, item.quantity - 1, item.selectedSize);
+                                  }
+                                }}
                                 className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition cursor-pointer"
+                                title={item.quantity === 1 ? "Remove item" : "Decrease quantity"}
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -259,17 +268,19 @@ export default function CartDrawer() {
                                 type="button"
                                 onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.selectedSize)}
                                 disabled={item.quantity >= maxStock}
-                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 transition cursor-pointer"
+                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed transition cursor-pointer"
+                                title={item.quantity >= maxStock ? `Max ${maxStock} in Size ${item.selectedSize || ""}` : "Add quantity"}
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
                             </div>
 
+                            {/* Remove button explicitly targeting this item's ID & selected size */}
                             <button
                               type="button"
                               onClick={() => removeFromCart(item.product.id, item.selectedSize)}
-                              className="p-1.5 text-slate-400 hover:text-rose-500 transition cursor-pointer"
-                              title="Remove item"
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                              title={`Remove Size ${item.selectedSize || ""} from cart`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -316,7 +327,7 @@ export default function CartDrawer() {
             <form onSubmit={handleWhatsAppOrder} className="flex-1 flex flex-col justify-between">
               <div className="p-5 space-y-4 overflow-y-auto">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     Your Name *
                   </label>
@@ -331,7 +342,7 @@ export default function CartDrawer() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     Phone Number (Optional)
                   </label>
@@ -345,7 +356,7 @@ export default function CartDrawer() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                     Fulfillment / Pickup Method
                   </label>
@@ -382,7 +393,6 @@ export default function CartDrawer() {
                   />
                 </div>
 
-                {/* Quick Summary Preview */}
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] space-y-1">
                   <div className="flex justify-between text-slate-500 dark:text-slate-400">
                     <span>Total Items:</span>
@@ -395,7 +405,6 @@ export default function CartDrawer() {
                 </div>
               </div>
 
-              {/* Submit to WhatsApp */}
               <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
                 <button
                   type="submit"

@@ -23,6 +23,14 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+// Helper to determine exact stock limit for a product/size combination
+function getItemStockLimit(product: Product, size?: string): number {
+  if (size && product.size_stocks && typeof product.size_stocks[size] === "number") {
+    return product.size_stocks[size];
+  }
+  return product.stock_quantity ?? (product.in_stock ? 10 : 0);
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -46,10 +54,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = (itemToAdd: Product & { selectedSize?: string }) => {
     const { selectedSize, ...product } = itemToAdd;
-    const currentStock = product.stock_quantity ?? (product.in_stock ? 1 : 0);
+    const availableStock = getItemStockLimit(product, selectedSize);
 
-    if (currentStock <= 0) {
-      alert("This item is currently sold out!");
+    if (availableStock <= 0) {
+      alert(
+        selectedSize
+          ? `Size ${selectedSize} is currently sold out!`
+          : "This item is currently sold out!"
+      );
       return;
     }
 
@@ -63,8 +75,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
       if (existingIndex > -1) {
         const existing = prevCart[existingIndex];
-        if (existing.quantity >= currentStock) {
-          alert(`Only ${currentStock} units available in stock!`);
+        if (existing.quantity >= availableStock) {
+          const isFootwear = product.category?.toLowerCase().includes("footwear") || product.category?.toLowerCase().includes("boot");
+          const unit = isFootwear ? "pairs" : "units";
+          alert(
+            selectedSize
+              ? `Only ${availableStock} ${unit} available in Size ${selectedSize}!`
+              : `Only ${availableStock} ${unit} available in stock!`
+          );
           return prevCart;
         }
 
@@ -102,9 +120,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           (item.selectedSize || undefined) === (selectedSize || undefined);
 
         if (isMatch) {
-          const maxStock = item.product.stock_quantity ?? 1;
+          const maxStock = getItemStockLimit(item.product, item.selectedSize);
+          
           if (quantity > maxStock) {
-            alert(`Only ${maxStock} units available!`);
+            const isFootwear = item.product.category?.toLowerCase().includes("footwear") || item.product.category?.toLowerCase().includes("boot");
+            const unit = isFootwear ? "pairs" : "units";
+            alert(
+              item.selectedSize
+                ? `Only ${maxStock} ${unit} available in Size ${item.selectedSize}!`
+                : `Only ${maxStock} ${unit} available!`
+            );
             return { ...item, quantity: maxStock };
           }
           return { ...item, quantity };

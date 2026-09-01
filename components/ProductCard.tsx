@@ -16,7 +16,7 @@ export interface Product {
   in_stock: boolean;
   stock_quantity?: number;
   available_sizes?: string[];
-  size_stocks?: Record<string, number>; // e.g. { "40": 2, "41": 0, "42": 4 }
+  size_stocks?: Record<string, number>;
 }
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -26,53 +26,61 @@ export default function ProductCard({ product }: { product: Product }) {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
   // Normalize Images
-  const rawImages = (product.images && product.images.length > 0)
-    ? product.images.filter((img) => Boolean(img && img.trim()))
-    : product.image_url ? [product.image_url] : ["/placeholder.png"];
+  const rawImages =
+    product.images && product.images.length > 0
+      ? product.images.filter((img) => Boolean(img && img.trim()))
+      : product.image_url
+      ? [product.image_url]
+      : ["/placeholder.png"];
 
   const imageList = rawImages.length > 0 ? rawImages : ["/placeholder.png"];
   const displayCoverImage = imageList[0];
   const activeModalImage = imageList[activeImageIdx] || displayCoverImage;
 
-  // Resolve sizes list and stock quantity for each size
-  const sizesList: string[] = product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
-  
-  const getSizeQuantity = (size: string): number => {
-  // 1. If size-specific stock exists, return the exact number
-  if (product.size_stocks && typeof product.size_stocks[size] === "number") {
-    return product.size_stocks[size];
-  }
-  
-  // 2. If it's a legacy item with no size_stocks, divide stock or show 1 if in stock
-  if (sizesList.length > 0) {
-    return product.in_stock ? 1 : 0;
-  }
+  // Resolve sizes list
+  const sizesList: string[] =
+    product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
+  const hasSizes = sizesList.length > 0;
 
-  return product.stock_quantity ?? (product.in_stock ? 1 : 0);
-};
+  const isFootwear =
+    product.category?.toLowerCase().includes("footwear") ||
+    product.category?.toLowerCase().includes("boot");
+  const unitLabel = isFootwear ? "pairs" : "units";
+
+  // Exact quantity helper per size
+  const getSizeQuantity = (size: string): number => {
+    if (product.size_stocks && typeof product.size_stocks[size] === "number") {
+      return product.size_stocks[size];
+    }
+    if (hasSizes) {
+      return product.in_stock ? 1 : 0;
+    }
+    return product.stock_quantity ?? (product.in_stock ? 1 : 0);
+  };
 
   // Find first size that is actually in stock
-  const firstAvailableSize = sizesList.find((s) => getSizeQuantity(s) > 0) || (sizesList.length > 0 ? sizesList[0] : null);
+  const firstAvailableSize =
+    sizesList.find((s) => getSizeQuantity(s) > 0) || (hasSizes ? sizesList[0] : null);
   const [selectedSize, setSelectedSize] = useState<string | null>(firstAvailableSize);
 
   const discountPercent =
     product.original_price && product.original_price > product.price
-      ? Math.round(
-          ((product.original_price - product.price) / product.original_price) * 100
-        )
+      ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
       : null;
 
-  // Calculate overall stock
-  const totalStock = product.size_stocks && Object.keys(product.size_stocks).length > 0
-    ? Object.values(product.size_stocks).reduce((acc, count) => acc + count, 0)
-    : (product.stock_quantity ?? (product.in_stock ? 10 : 0));
+  // Total stock calculated from size breakdown if present
+  const totalStock =
+    product.size_stocks && Object.keys(product.size_stocks).length > 0
+      ? Object.values(product.size_stocks).reduce((acc, count) => acc + count, 0)
+      : product.stock_quantity ?? (product.in_stock ? 10 : 0);
 
   const isOutOfStock = !product.in_stock || totalStock <= 0;
   const selectedSizeQty = selectedSize ? getSizeQuantity(selectedSize) : totalStock;
   const isSelectedSizeSoldOut = selectedSize ? selectedSizeQty <= 0 : isOutOfStock;
 
   const handleAddToCart = () => {
-    if (isOutOfStock || isSelectedSizeSoldOut) return;
+    if (isOutOfStock || (hasSizes && isSelectedSizeSoldOut)) return;
+
     addToCart({
       ...product,
       image_url: displayCoverImage,
@@ -89,12 +97,6 @@ export default function ProductCard({ product }: { product: Product }) {
   const prevModalImage = () => {
     setActiveImageIdx((prev) => (prev === 0 ? imageList.length - 1 : prev - 1));
   };
-
-  // category & unit label helper
-  const isFootwear = product.category.toLowerCase().includes("footwear") || product.category.toLowerCase().includes("boots");
-  const hasSizes = sizesList && sizesList.length > 0;
-
-  const unitLabel = isFootwear ? "pairs" : "units";
 
   return (
     <>
@@ -115,7 +117,7 @@ export default function ProductCard({ product }: { product: Product }) {
             </span>
           )}
 
-          {/* Top Badges */}
+          {/* Badges */}
           <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1 pointer-events-none">
             {discountPercent ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500 text-white font-black text-[10px] tracking-wide shadow-md animate-pulse">
@@ -160,7 +162,7 @@ export default function ProductCard({ product }: { product: Product }) {
           <div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">
               <span>{product.category}</span>
-              {sizesList.length > 0 && (
+              {hasSizes && (
                 <span className="text-[10px] lowercase text-emerald-600 dark:text-emerald-400 font-bold">
                   {sizesList.length} sizes
                 </span>
@@ -184,12 +186,18 @@ export default function ProductCard({ product }: { product: Product }) {
           </div>
 
           {/* Dynamic Size Selection with Live Quantity Indicators */}
-          {sizesList.length > 0 && (
+          {hasSizes && (
             <div className="space-y-1.5 pt-1">
               <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
                 <span className="text-slate-500 dark:text-slate-400">Select Size:</span>
                 {selectedSize && (
-                  <span className={selectedSizeQty > 0 ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-rose-500 font-bold"}>
+                  <span
+                    className={
+                      selectedSizeQty > 0
+                        ? "text-emerald-600 dark:text-emerald-400 font-bold"
+                        : "text-rose-500 font-bold"
+                    }
+                  >
                     {selectedSizeQty > 0 ? `${selectedSizeQty} left` : "Sold out"}
                   </span>
                 )}
@@ -230,9 +238,9 @@ export default function ProductCard({ product }: { product: Product }) {
           <button
             type="button"
             onClick={handleAddToCart}
-            disabled={isOutOfStock || isSelectedSizeSoldOut}
+            disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
             className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-98 shadow-sm ${
-              isOutOfStock || isSelectedSizeSoldOut
+              isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
                 ? "bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed"
                 : isAdded
                 ? "bg-emerald-600 text-white"
@@ -244,7 +252,7 @@ export default function ProductCard({ product }: { product: Product }) {
                 <Check className="w-4 h-4 stroke-[3]" />
                 <span>Added to Cart!</span>
               </>
-            ) : isOutOfStock || isSelectedSizeSoldOut ? (
+            ) : isOutOfStock || (hasSizes && isSelectedSizeSoldOut) ? (
               <span>Size Sold Out</span>
             ) : (
               <>
@@ -342,12 +350,16 @@ export default function ProductCard({ product }: { product: Product }) {
             </div>
 
             {/* Modal Sizes Picker with Live Stock Breakdown */}
-            {sizesList.length > 0 && (
+            {hasSizes && (
               <div className="space-y-2 border-t border-slate-200 dark:border-slate-800 pt-3">
                 <div className="flex justify-between items-center text-xs font-bold text-slate-900 dark:text-white">
                   <span>Available Sizes:</span>
                   {selectedSize && (
-                    <span className={selectedSizeQty > 0 ? "text-emerald-500 text-[11px]" : "text-rose-500 text-[11px]"}>
+                    <span
+                      className={
+                        selectedSizeQty > 0 ? "text-emerald-500 text-[11px]" : "text-rose-500 text-[11px]"
+                      }
+                    >
                       {selectedSizeQty > 0 ? `${selectedSizeQty} in stock` : "Selected size sold out"}
                     </span>
                   )}
@@ -389,42 +401,42 @@ export default function ProductCard({ product }: { product: Product }) {
                 Product Details & Specifications
               </h4>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                {product.description || "Authentic quality sporting gear verified by Elim Sports. Available for instant pickup at Moms & Dads Centre, Juja or campus/rider delivery."}
+                {product.description ||
+                  "Authentic quality sporting gear verified by Elim Sports. Available for instant pickup at Moms & Dads Centre, Juja or campus/rider delivery."}
               </p>
             </div>
 
-            {/* Stock Info */}
-           {/* Smart Inventory Status Text */}
-<div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-  <AlertCircle className="w-4 h-4 text-emerald-500" />
-  <span>
-    Inventory Status:{" "}
-    <strong className="text-slate-900 dark:text-white">
-      {isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
-        ? "Out of Stock"
-        : hasSizes && selectedSize
-        ? `${selectedSizeQty} ${unitLabel} available in Size ${selectedSize}`
-        : `${totalStock} available in store`}
-    </strong>
-  </span>
-</div>
+            {/* Smart Inventory Status Text */}
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <AlertCircle className="w-4 h-4 text-emerald-500" />
+              <span>
+                Inventory Status:{" "}
+                <strong className="text-slate-900 dark:text-white">
+                  {isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
+                    ? "Out of Stock"
+                    : hasSizes && selectedSize
+                    ? `${selectedSizeQty} ${unitLabel} available in Size ${selectedSize}`
+                    : `${totalStock} available in store`}
+                </strong>
+              </span>
+            </div>
 
-{/* Dynamic Modal Action Button */}
-<button
-  type="button"
-  onClick={() => {
-    handleAddToCart();
-    setIsDetailsOpen(false);
-  }}
-  disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
-  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
->
-  {isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
-    ? "Sold Out"
-    : hasSizes && selectedSize
-    ? `Add Size ${selectedSize} to Order (KSH ${Number(product.price).toLocaleString()})`
-    : `Add to Order (KSH ${Number(product.price).toLocaleString()})`}
-</button>
+            {/* Dynamic Modal Action Button */}
+            <button
+              type="button"
+              onClick={() => {
+                handleAddToCart();
+                setIsDetailsOpen(false);
+              }}
+              disabled={isOutOfStock || (hasSizes && isSelectedSizeSoldOut)}
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-black font-bold text-xs rounded-xl shadow-md transition cursor-pointer active:scale-98"
+            >
+              {isOutOfStock || (hasSizes && isSelectedSizeSoldOut)
+                ? "Sold Out"
+                : hasSizes && selectedSize
+                ? `Add Size ${selectedSize} to Order (KSH ${Number(product.price).toLocaleString()})`
+                : `Add to Order (KSH ${Number(product.price).toLocaleString()})`}
+            </button>
           </div>
         </div>
       )}
