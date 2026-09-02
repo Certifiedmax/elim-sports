@@ -10,7 +10,7 @@ export interface Product {
   brand?: string;
   price: number;
   original_price?: number;
-  cost_price?: number; // <-- Added for exact net profit calculation
+  cost_price?: number;
   category: string;
   badge?: string;
   image_url?: string;
@@ -28,7 +28,6 @@ export default function ProductCard({ product }: { product: Product }) {
   const [isAdded, setIsAdded] = useState(false);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
-  // Normalize Images
   const rawImages =
     product.images && product.images.length > 0
       ? product.images.filter((img) => Boolean(img && img.trim()))
@@ -40,7 +39,6 @@ export default function ProductCard({ product }: { product: Product }) {
   const displayCoverImage = imageList[0];
   const activeModalImage = imageList[activeImageIdx] || displayCoverImage;
 
-  // Resolve sizes list
   const sizesList: string[] =
     product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
   const hasSizes = sizesList.length > 0;
@@ -50,7 +48,6 @@ export default function ProductCard({ product }: { product: Product }) {
     product.category?.toLowerCase().includes("boot");
   const unitLabel = isFootwear ? "pairs" : "units";
 
-  // Exact quantity helper per size
   const getSizeQuantity = (size: string): number => {
     if (product.size_stocks && typeof product.size_stocks[size] === "number") {
       return product.size_stocks[size];
@@ -61,7 +58,6 @@ export default function ProductCard({ product }: { product: Product }) {
     return product.stock_quantity ?? (product.in_stock ? 1 : 0);
   };
 
-  // Find first size that is actually in stock
   const firstAvailableSize =
     sizesList.find((s) => getSizeQuantity(s) > 0) || (hasSizes ? sizesList[0] : null);
   const [selectedSize, setSelectedSize] = useState<string | null>(firstAvailableSize);
@@ -71,7 +67,6 @@ export default function ProductCard({ product }: { product: Product }) {
       ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
       : null;
 
-  // Total stock calculated from size breakdown if present
   const totalStock =
     product.size_stocks && Object.keys(product.size_stocks).length > 0
       ? Object.values(product.size_stocks).reduce((acc, count) => acc + count, 0)
@@ -88,13 +83,12 @@ export default function ProductCard({ product }: { product: Product }) {
       ...product,
       image_url: displayCoverImage,
       selectedSize: selectedSize || undefined,
-      cost_price: Number(product.cost_price) || 0, // <-- Explicitly passes exact product cost_price into cart items
+      cost_price: Number(product.cost_price) || 0,
     });
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1200);
   };
 
-  // Instant direct single-item order via WhatsApp
   const handleBuyNow = () => {
     if (isOutOfStock || (hasSizes && isSelectedSizeSoldOut)) return;
 
@@ -125,8 +119,6 @@ export default function ProductCard({ product }: { product: Product }) {
   return (
     <>
       <div className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col justify-between">
-        
-        {/* Top Image Container */}
         <div className="relative w-full aspect-square bg-slate-100 dark:bg-slate-950 overflow-hidden">
           <img
             src={displayCoverImage}
@@ -134,21 +126,12 @@ export default function ProductCard({ product }: { product: Product }) {
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
 
-          {/* Photo Count Indicator */}
           {imageList.length > 1 && (
-            <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-xs text-[10px] font-bold text-white pointer-events-none">
+            <span className="absolute bottom-2.5 left-2.5 px-2 py-0.5 rounded-lg bg-black/70 backdrop-blur-xs text-[10px] font-bold text-white pointer-events-none z-10">
               1/{imageList.length} photos
             </span>
           )}
 
-          {/* Brand Tag (Bottom Left) */}
-          {product.brand && (
-            <span className="absolute bottom-2.5 left-2.5 z-10 bg-black/75 backdrop-blur-xs text-slate-200 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-700">
-              {product.brand}
-            </span>
-          )}
-
-          {/* Top-Left Stacked Badges with Bouncy Highlight */}
           <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5 pointer-events-none z-10">
             {product.badge && product.badge !== "None" && (
               <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-black font-black text-[9px] tracking-wider uppercase shadow-md border border-emerald-400/40">
@@ -156,15 +139,14 @@ export default function ProductCard({ product }: { product: Product }) {
               </span>
             )}
             {discountPercent && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white font-black text-[10px] tracking-wide shadow-lg animate-bounce border border-rose-400/40">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-600 text-white font-black text-[10px] tracking-wide shadow-sm border border-rose-500">
                 <Sparkles className="w-3 h-3 fill-white" />
                 {discountPercent}% OFF
               </span>
             )}
           </div>
 
-          {/* Top-Right Stock Status Indicator */}
-          <div className="absolute top-2.5 right-2.5 pointer-events-none z-10">
+          <div className="absolute top-2.5 right-2.5 flex flex-col items-end gap-1.5 pointer-events-none z-10">
             {isOutOfStock ? (
               <span className="px-2 py-0.5 rounded-full bg-slate-900/80 text-rose-400 font-bold text-[10px] backdrop-blur-xs border border-rose-500/30">
                 Out of Stock
@@ -178,9 +160,14 @@ export default function ProductCard({ product }: { product: Product }) {
                 In Stock
               </span>
             )}
+
+            {product.brand && (
+              <span className="bg-black/75 backdrop-blur-xs text-slate-200 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-700">
+                {product.brand}
+              </span>
+            )}
           </div>
 
-          {/* Quick View Button */}
           <button
             type="button"
             onClick={() => {
@@ -194,7 +181,6 @@ export default function ProductCard({ product }: { product: Product }) {
           </button>
         </div>
 
-        {/* Product Details Section */}
         <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">
@@ -222,7 +208,6 @@ export default function ProductCard({ product }: { product: Product }) {
             </div>
           </div>
 
-          {/* Dynamic Size Selection with Live Quantity Indicators */}
           {hasSizes && (
             <div className="space-y-1.5 pt-1">
               <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
@@ -252,11 +237,11 @@ export default function ProductCard({ product }: { product: Product }) {
                       type="button"
                       disabled={isSoldOut}
                       onClick={() => setSelectedSize(size)}
-                      className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1 cursor-pointer ${
+                      className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition flex items-center gap-1 cursor-pointer active:scale-95 ${
                         isSoldOut
                           ? "opacity-35 bg-slate-100 dark:bg-slate-950 text-slate-400 border-slate-200 dark:border-slate-800 line-through cursor-not-allowed"
                           : isSelected
-                          ? "bg-emerald-500 text-black border-emerald-500 shadow-xs"
+                          ? "bg-emerald-400 text-slate-950 border-emerald-400 shadow-sm ring-2 ring-emerald-400/50"
                           : "bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-400"
                       }`}
                     >
@@ -271,7 +256,6 @@ export default function ProductCard({ product }: { product: Product }) {
             </div>
           )}
 
-          {/* Add To Cart */}
           <button
             type="button"
             onClick={handleAddToCart}
@@ -301,11 +285,9 @@ export default function ProductCard({ product }: { product: Product }) {
         </div>
       </div>
 
-      {/* Multi-Photo Quick View Details Modal */}
       {isDetailsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
           <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl p-5 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col justify-between overflow-y-auto">
-            
             <button
               type="button"
               onClick={() => setIsDetailsOpen(false)}
@@ -314,7 +296,6 @@ export default function ProductCard({ product }: { product: Product }) {
               <X className="w-5 h-5" />
             </button>
 
-            {/* Gallery View Area */}
             <div className="space-y-2">
               <div className="relative w-full aspect-video rounded-2xl bg-slate-100 dark:bg-slate-950 overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center">
                 <img
@@ -345,7 +326,6 @@ export default function ProductCard({ product }: { product: Product }) {
                 )}
               </div>
 
-              {/* Thumbnails Row */}
               {imageList.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {imageList.map((img, idx) => (
@@ -366,7 +346,6 @@ export default function ProductCard({ product }: { product: Product }) {
               )}
             </div>
 
-            {/* Product Summary Header */}
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">
@@ -393,7 +372,6 @@ export default function ProductCard({ product }: { product: Product }) {
               </div>
             </div>
 
-            {/* Modal Sizes Picker with Live Stock Breakdown */}
             {hasSizes && (
               <div className="space-y-2 border-t border-slate-200 dark:border-slate-800 pt-3">
                 <div className="flex justify-between items-center text-xs font-bold text-slate-900 dark:text-white">
@@ -439,7 +417,6 @@ export default function ProductCard({ product }: { product: Product }) {
               </div>
             )}
 
-            {/* Description */}
             <div className="space-y-1.5 border-t border-slate-200 dark:border-slate-800 pt-3">
               <h4 className="text-[11px] font-bold text-slate-900 dark:text-white uppercase tracking-wider">
                 Product Details & Specifications
@@ -450,7 +427,6 @@ export default function ProductCard({ product }: { product: Product }) {
               </p>
             </div>
 
-            {/* Smart Inventory Status Text */}
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <AlertCircle className="w-4 h-4 text-emerald-500" />
               <span>
@@ -465,7 +441,6 @@ export default function ProductCard({ product }: { product: Product }) {
               </span>
             </div>
 
-            {/* Dual Action Buttons: Add to Cart vs Direct Buy Now */}
             <div className="grid grid-cols-2 gap-2.5 pt-1">
               <button
                 type="button"
