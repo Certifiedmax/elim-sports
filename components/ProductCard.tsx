@@ -7,9 +7,11 @@ import { Plus, Check, Eye, X, AlertCircle, Sparkles, ChevronLeft, ChevronRight, 
 export interface Product {
   id: string;
   name: string;
+  brand?: string;
   price: number;
   original_price?: number;
   category: string;
+  badge?: string;
   image_url?: string;
   images?: string[];
   description?: string;
@@ -137,23 +139,36 @@ export default function ProductCard({ product }: { product: Product }) {
             </span>
           )}
 
-          {/* Badges */}
-          <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1 pointer-events-none">
-            {discountPercent ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500 text-white font-black text-[10px] tracking-wide shadow-md animate-pulse">
-                <Sparkles className="w-2.5 h-2.5" />
+          {/* Brand Tag (Bottom Left) */}
+          {product.brand && (
+            <span className="absolute bottom-2.5 left-2.5 z-10 bg-black/75 backdrop-blur-xs text-slate-200 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-700">
+              {product.brand}
+            </span>
+          )}
+
+          {/* Top-Left Stacked Badges with Bouncy Highlight */}
+          <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5 pointer-events-none z-10">
+            {product.badge && product.badge !== "None" && (
+              <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-black font-black text-[9px] tracking-wider uppercase shadow-md border border-emerald-400/40">
+                {product.badge}
+              </span>
+            )}
+            {discountPercent && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-rose-500 to-red-600 text-white font-black text-[10px] tracking-wide shadow-lg animate-bounce border border-rose-400/40">
+                <Sparkles className="w-3 h-3 fill-white" />
                 {discountPercent}% OFF
               </span>
-            ) : (
-              <span />
             )}
+          </div>
 
+          {/* Top-Right Stock Status Indicator */}
+          <div className="absolute top-2.5 right-2.5 pointer-events-none z-10">
             {isOutOfStock ? (
               <span className="px-2 py-0.5 rounded-full bg-slate-900/80 text-rose-400 font-bold text-[10px] backdrop-blur-xs border border-rose-500/30">
                 Out of Stock
               </span>
             ) : totalStock <= 3 ? (
-              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-black font-black text-[10px] animate-bounce shadow-xs">
+              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-black font-black text-[10px] shadow-xs">
                 Only {totalStock} Left!
               </span>
             ) : (
@@ -351,9 +366,16 @@ export default function ProductCard({ product }: { product: Product }) {
 
             {/* Product Summary Header */}
             <div className="space-y-1">
-              <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">
-                {product.category}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">
+                  {product.category}
+                </span>
+                {product.brand && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-300">
+                    {product.brand}
+                  </span>
+                )}
+              </div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {product.name}
               </h2>

@@ -6,7 +6,16 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ProductCard, { Product } from "@/components/ProductCard";
 import LiveChatWidget from "@/components/LiveChatWidget";
-import { Flame, Search, SlidersHorizontal, X, Tag } from "lucide-react";
+import { 
+  Flame, 
+  Search, 
+  SlidersHorizontal, 
+  X, 
+  Tag, 
+  MapPin, 
+  Truck, 
+  ShieldCheck 
+} from "lucide-react";
 
 const CATEGORIES = [
   "All",
@@ -153,7 +162,7 @@ export default function Storefront() {
   }, [products, selectedCategory, searchQuery, sortBy]);
 
   return (
-    <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col justify-between overflow-hidden transition-colors duration-300">
+    <div className="relative min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col justify-between overflow-x-hidden transition-colors duration-300">
       {/* Background Watermark */}
       <div className="pointer-events-none fixed inset-0 flex items-center justify-center z-0 overflow-hidden select-none">
         <img
@@ -190,15 +199,17 @@ export default function Storefront() {
         </div>
 
         {/* Hero Section */}
-        <section className="border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-white to-slate-100 dark:from-slate-900/60 dark:to-slate-950/90 py-10 sm:py-14 px-4 sm:px-6">
+        <section className="border-b border-slate-200 dark:border-slate-800 bg-gradient-to-b from-white to-slate-100 dark:from-slate-900/60 dark:to-slate-950/90 py-8 sm:py-14 px-4 sm:px-6">
           <div className="max-w-3xl mx-auto text-center space-y-4">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
               <Tag className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               Authentic Boots, Rackets, Jerseys & Gym Wear
             </div>
-            <h1 className="text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
+            
+            <h1 className="text-2xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
               Gear Up With Pro Sportswear & Equipment
             </h1>
+            
             <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed">
               Football boots, running shoes, rackets (badminton, tennis, pickleball), team jerseys, gym tights, and tracksuits at Elim Sports in Juja.
             </p>
@@ -225,21 +236,55 @@ export default function Storefront() {
                 )}
               </div>
             </div>
+
+            {/* Juja Local Delivery & Trust Strip */}
+            <div className="pt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 max-w-2xl mx-auto text-left">
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-xs">
+                <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight">Moms & Dads Juja</h4>
+                  <p className="text-[10px] text-slate-500 leading-tight">Instant Store Pickup</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-xs">
+                <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">
+                  <Truck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight">Fast Nairobi Dispatch</h4>
+                  <p className="text-[10px] text-slate-500 leading-tight">Direct Riders & Countrywide</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 shadow-xs">
+                <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight">M-Pesa Verified</h4>
+                  <p className="text-[10px] text-slate-500 leading-tight">Secure WhatsApp Checkout</p>
+                </div>
+              </div>
+            </div>
+
           </div>
         </section>
 
         {/* Filter, Sort & Catalog Grid */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-24 sm:pb-16">
           {/* Controls Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6">
-            {/* Category Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            {/* Category Filter Pills (Touch-friendly Horizontal Scroll) */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mx-4 px-4 sm:mx-0 sm:px-0">
               {CATEGORIES.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer active:scale-95 ${
                     selectedCategory === cat
                       ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
                       : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white border border-slate-200 dark:border-slate-800"
@@ -258,17 +303,17 @@ export default function Storefront() {
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as SortOption)}
                   aria-label="Sort products"
-                  className="bg-transparent text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer"
+                  className="bg-transparent text-slate-700 dark:text-slate-300 font-semibold focus:outline-none cursor-pointer text-xs"
                 >
-                  <option value="featured">Featured / Latest</option>
-                  <option value="discount">Biggest Offers (-% OFF)</option>
-                  <option value="price-asc">Price: Low to High</option>
-                  <option value="price-desc">Price: High to Low</option>
-                  <option value="in-stock">Available First</option>
+                  <option value="featured" className="bg-white dark:bg-slate-900">Featured / Latest</option>
+                  <option value="discount" className="bg-white dark:bg-slate-900">Biggest Offers (-% OFF)</option>
+                  <option value="price-asc" className="bg-white dark:bg-slate-900">Price: Low to High</option>
+                  <option value="price-desc" className="bg-white dark:bg-slate-900">Price: High to Low</option>
+                  <option value="in-stock" className="bg-white dark:bg-slate-900">Available First</option>
                 </select>
               </div>
 
-              <span className="text-xs text-slate-500 font-medium">
+              <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
                 {filteredProducts.length} {filteredProducts.length === 1 ? "item" : "items"}
               </span>
             </div>
@@ -276,8 +321,8 @@ export default function Storefront() {
 
           {/* Product Grid */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[1, 2, 3].map((n) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
                 <div
                   key={n}
                   className="h-80 rounded-2xl bg-slate-200 dark:bg-slate-900/60 animate-pulse border border-slate-300 dark:border-slate-800"
@@ -304,7 +349,7 @@ export default function Storefront() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
               {filteredProducts.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}

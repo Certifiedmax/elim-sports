@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { restoreOrderStock, deductOrderStock } from "@/lib/stockHelper";
 import Link from "next/link";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   ArrowLeft,
   Plus,
@@ -32,7 +34,12 @@ import {
   MapPin,
   RefreshCw,
   Layers,
-  XCircle
+  XCircle,
+  FileDown,
+  Archive,
+  RotateCcw,
+  Calendar,
+  AlertTriangle,
 } from "lucide-react";
 import { Product } from "@/components/ProductCard";
 
@@ -44,6 +51,16 @@ const CATEGORIES = [
   "Apparel & Gym",
   "Rackets & Paddles",
   "Accessories & Gear",
+];
+
+const BRANDS = ["Yonex", "Nike", "Adidas", "Kawasaki", "Li-Ning", "Puma", "Generic / Other"];
+
+const BADGES = [
+  { label: "None", value: "None" },
+  { label: "🔥 Bestseller", value: "Bestseller" },
+  { label: "✨ New Drop", value: "New Drop" },
+  { label: "⚡ Low Stock", value: "Low Stock" },
+  { label: "🏆 Pro Grade", value: "Pro Grade" },
 ];
 
 interface OrderItem {
@@ -65,6 +82,7 @@ interface Order {
   items: OrderItem[];
   total_amount: number;
   status: "pending" | "completed" | "cancelled";
+  is_archived?: boolean;
 }
 
 export default function AdminPage() {
@@ -75,10 +93,14 @@ export default function AdminPage() {
   // Tab View: "orders" | "inventory"
   const [activeTab, setActiveTab] = useState<"orders" | "inventory">("orders");
 
-  // Orders State
+  // Orders State & Filters
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>("ALL");
+  const [orderViewScope, setOrderViewScope] = useState<"active" | "archived" | "cancelled">("active");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   // Inventory State
   const [products, setProducts] = useState<Product[]>([]);
@@ -92,9 +114,12 @@ export default function AdminPage() {
 
   // Create Product Form State
   const [name, setName] = useState("");
+  const [brand, setBrand] = useState("Yonex");
   const [category, setCategory] = useState("Footwear");
+  const [costPrice, setCostPrice] = useState("");
   const [price, setPrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
+  const [badge, setBadge] = useState("None");
   const [stockQuantity, setStockQuantity] = useState("5");
   const [description, setDescription] = useState("");
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
@@ -112,9 +137,12 @@ export default function AdminPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editFormData, setEditFormData] = useState<{
     name: string;
+    brand: string;
     category: string;
+    cost_price: string;
     price: string;
     original_price: string;
+    badge: string;
     stock_quantity: string;
     description: string;
     available_sizes: string[];
@@ -122,9 +150,12 @@ export default function AdminPage() {
     images: string[];
   }>({
     name: "",
+    brand: "Yonex",
     category: "Footwear",
+    cost_price: "",
     price: "",
     original_price: "",
+    badge: "None",
     stock_quantity: "0",
     description: "",
     available_sizes: [],
@@ -139,7 +170,17 @@ export default function AdminPage() {
     delta: number;
   } | null>(null);
 
-  // 1. Check server-side HTTP-only cookie authentication on mount
+  // Live profit margin calculation for create form
+  const liveMargin = useMemo(() => {
+    const selling = Number(price) || 0;
+    const cost = Number(costPrice) || 0;
+    if (!selling || !cost || selling <= cost) return null;
+
+    const profit = selling - cost;
+    const percentage = ((profit / selling) * 100).toFixed(1);
+    return { profit, percentage };
+  }, [price, costPrice]);
+
   useEffect(() => {
     async function checkServerAuth() {
       try {
@@ -223,7 +264,6 @@ export default function AdminPage() {
     }
   }, [isAuthenticated, loadProducts, loadBannerText, fetchOrders]);
 
-  // 2. Server-Side Secure PIN Submit
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinError(false);
@@ -250,7 +290,6 @@ export default function AdminPage() {
     }
   };
 
-  // 3. Server-Side Secure Logout (Clears HTTP-only Cookie)
   const handleLogout = async () => {
     try {
       await fetch("/api/admin/auth", { method: "DELETE" });
@@ -259,18 +298,18 @@ export default function AdminPage() {
     }
   };
 
-  // 4. Intelligent Order Status Toggle with Automatic Restocking
-  const updateOrderStatus = async (orderId: string, nextStatus: "pending" | "completed" | "cancelled") => {
+  const updateOrderStatus = async (
+    orderId: string,
+    nextStatus: "pending" | "completed" | "cancelled"
+  ) => {
     setUpdatingOrderId(orderId);
     try {
       const targetOrder = orders.find((o) => o.id === orderId);
 
       if (targetOrder) {
-        // If canceling an active/pending order -> restore inventory
         if (nextStatus === "cancelled" && targetOrder.status !== "cancelled") {
           await restoreOrderStock(targetOrder.items);
         }
-        // If reinstating a previously cancelled order -> re-deduct inventory
         if (targetOrder.status === "cancelled" && nextStatus !== "cancelled") {
           await deductOrderStock(targetOrder.items);
         }
@@ -291,10 +330,137 @@ export default function AdminPage() {
     }
   };
 
-  // Financial Analytics Calculations
+  const toggleArchiveOrder = async (orderId: string, isArchived: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_archived: isArchived })
+        .eq("id", orderId);
+
+      if (error) throw error;
+      await fetchOrders();
+    } catch (err) {
+      console.error("Failed to update archive status:", err);
+      alert("Could not update archive state.");
+    }
+  };
+
+  const archiveAllCompleted = async () => {
+    const completedIds = orders
+      .filter((o) => o.status === "completed" && !o.is_archived)
+      .map((o) => o.id);
+
+    if (completedIds.length === 0) {
+      alert("No active completed orders to clear.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Archive and clear ${completedIds.length} completed order(s) from the active board?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_archived: true })
+        .in("id", completedIds);
+
+      if (error) throw error;
+      await fetchOrders();
+    } catch (err) {
+      console.error("Failed to archive completed orders:", err);
+      alert("Could not clear completed orders.");
+    }
+  };
+
+  const dismissAllCancelled = async () => {
+    const cancelledIds = orders
+      .filter((o) => o.status === "cancelled" && !o.is_archived)
+      .map((o) => o.id);
+
+    if (cancelledIds.length === 0) {
+      alert("No active cancelled orders to clear.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Move ${cancelledIds.length} cancelled order(s) to the Cancelled Space?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ is_archived: true })
+        .in("id", cancelledIds);
+
+      if (error) throw error;
+      await fetchOrders();
+    } catch (err) {
+      console.error("Failed to dismiss cancelled orders:", err);
+      alert("Could not clear cancelled orders.");
+    }
+  };
+
+  const handleResetLedgerToZero = async () => {
+    const confirmation = prompt(
+      "PERMANENT ACTION: To delete all test sales and reset your metrics to KSH 0, type 'RESET' below:"
+    );
+
+    if (confirmation !== "RESET") {
+      return;
+    }
+
+    setIsResetting(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+
+      if (error) throw error;
+
+      await fetchOrders();
+      alert("Store ledger has been reset to zero successfully!");
+    } catch (err: any) {
+      console.error("Failed to reset ledger:", err);
+      alert(err.message || "Failed to wipe orders.");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const availableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    orders.forEach((o) => {
+      const date = new Date(o.created_at);
+      if (!isNaN(date.getTime())) {
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        monthSet.add(key);
+      }
+    });
+    return Array.from(monthSet).sort().reverse();
+  }, [orders]);
+
+  const ordersInSelectedPeriod = useMemo(() => {
+    if (selectedMonth === "ALL") return orders;
+    return orders.filter((o) => {
+      const d = new Date(o.created_at);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return key === selectedMonth;
+    });
+  }, [orders, selectedMonth]);
+
   const analytics = useMemo(() => {
-    const completedOrders = orders.filter((o) => o.status === "completed");
-    const pendingOrders = orders.filter((o) => o.status === "pending");
+    const completedOrders = ordersInSelectedPeriod.filter((o) => o.status === "completed");
+    const pendingOrders = ordersInSelectedPeriod.filter((o) => o.status === "pending");
 
     const grossRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total_amount), 0);
     const estimatedNetProfit = Math.round(grossRevenue * 0.35);
@@ -304,16 +470,154 @@ export default function AdminPage() {
       return acc + unitsInOrder;
     }, 0);
 
+    const allTimeCompleted = orders.filter((o) => o.status === "completed");
+    const allTimeGross = allTimeCompleted.reduce((acc, o) => acc + Number(o.total_amount), 0);
+
     return {
       grossRevenue,
       estimatedNetProfit,
       completedCount: completedOrders.length,
       pendingCount: pendingOrders.length,
       totalUnitsSold,
+      allTimeGross,
     };
-  }, [orders]);
+  }, [ordersInSelectedPeriod, orders]);
 
-  // Size toggle & stock handlers for Creation form
+  const displayedOrders = useMemo(() => {
+    return ordersInSelectedPeriod.filter((o) => {
+      if (orderViewScope === "cancelled") {
+        return o.status === "cancelled";
+      }
+      if (orderViewScope === "archived") {
+        return o.status === "completed" && !!o.is_archived;
+      }
+      return !o.is_archived && o.status !== "cancelled";
+    });
+  }, [ordersInSelectedPeriod, orderViewScope]);
+
+  const generateSalesPdf = () => {
+    setIsExportingPdf(true);
+    try {
+      const doc = new jsPDF();
+      const monthLabel =
+        selectedMonth === "ALL"
+          ? "All-Time Statement"
+          : new Date(`${selectedMonth}-01`).toLocaleDateString("en-KE", {
+              month: "long",
+              year: "numeric",
+            });
+
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 38, "F");
+
+      doc.setTextColor(16, 185, 129);
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("ELIM SPORTS JUJA", 14, 16);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("Moms & Dads Centre, Juja | Phone: +254 796 757 424", 14, 23);
+      doc.text(`Official Sales Ledger Report • ${monthLabel}`, 14, 30);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("FINANCIAL OVERVIEW", 14, 48);
+
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Period Scope: ${monthLabel}`, 14, 55);
+      doc.text(`Gross Revenue (Fulfilled): KSH ${analytics.grossRevenue.toLocaleString()}`, 14, 61);
+      doc.text(
+        `Estimated Net Profit (~35% margin): KSH ${analytics.estimatedNetProfit.toLocaleString()}`,
+        14,
+        67
+      );
+      doc.text(`Total Units Dispatched: ${analytics.totalUnitsSold} items`, 120, 55);
+      doc.text(`Fulfilled Orders Count: ${analytics.completedCount}`, 120, 61);
+      doc.text(`Generated On: ${new Date().toLocaleString("en-KE")}`, 120, 67);
+
+      const tableRows = ordersInSelectedPeriod.map((o) => {
+        const itemSummaries =
+          o.items
+            ?.map((i) => `${i.quantity}x ${i.name}${i.size ? ` (Sz: ${i.size})` : ""}`)
+            .join(", ") || "No items listed";
+
+        const orderDate = new Date(o.created_at).toLocaleDateString("en-KE", {
+          dateStyle: "short",
+        });
+
+        return [
+          orderDate,
+          `${o.customer_name}\n${o.customer_phone || ""}`.trim(),
+          itemSummaries,
+          o.fulfillment_method,
+          `KSH ${Number(o.total_amount).toLocaleString()}`,
+          o.status.toUpperCase(),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: 74,
+        margin: { left: 14, right: 14 },
+        head: [["Date", "Customer", "Items & Sizes", "Fulfillment", "Amount", "Status"]],
+        body: tableRows,
+        theme: "plain",
+        styles: {
+          fontSize: 7.5,
+          cellPadding: 3,
+          valign: "middle",
+          textColor: [51, 65, 85],
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: [15, 23, 42],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 8,
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+        columnStyles: {
+          0: { cellWidth: 20 },
+          1: { cellWidth: 32 },
+          2: { cellWidth: "auto" },
+          3: { cellWidth: 42 },
+          4: { cellWidth: 24, fontStyle: "bold" },
+          5: {
+            cellWidth: 26,
+            halign: "center",
+            fontSize: 7,
+            fontStyle: "bold",
+          },
+        },
+      });
+
+      const cleanMonthName = selectedMonth === "ALL" ? "All_Time" : selectedMonth;
+      doc.save(`Elim_Sports_Sales_Report_${cleanMonthName}.pdf`);
+
+      if (orderViewScope === "active" && analytics.completedCount > 0) {
+        setTimeout(() => {
+          if (
+            confirm(
+              "PDF report downloaded! Would you like to clear and archive fulfilled orders from the active view now?"
+            )
+          ) {
+            archiveAllCompleted();
+          }
+        }, 500);
+      }
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to export PDF report.");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   const toggleSize = (size: string) => {
     if (selectedSizes.includes(size)) {
       setSelectedSizes((prev) => prev.filter((s) => s !== size));
@@ -335,7 +639,6 @@ export default function AdminPage() {
     }));
   };
 
-  // Size toggle & stock handlers for Edit form
   const toggleEditSize = (size: string) => {
     setEditFormData((prev) => {
       const exists = prev.available_sizes.includes(size);
@@ -386,7 +689,6 @@ export default function AdminPage() {
     setSavingBanner(false);
   }
 
-  // Create Form Image Handling
   const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -438,7 +740,6 @@ export default function AdminPage() {
     return uploadedUrls;
   }
 
-  // Handle Add Product
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) return;
@@ -463,9 +764,10 @@ export default function AdminPage() {
         }
       }
 
-      const calculatedQty = selectedSizes.length > 0
-        ? Object.values(sizeStocks).reduce((a, b) => a + b, 0)
-        : Math.max(0, parseInt(stockQuantity, 10) || 0);
+      const calculatedQty =
+        selectedSizes.length > 0
+          ? Object.values(sizeStocks).reduce((a, b) => a + b, 0)
+          : Math.max(0, parseInt(stockQuantity, 10) || 0);
 
       const regularPrice = originalPrice ? Number(originalPrice) : null;
       const primaryImage = finalImages[0];
@@ -473,9 +775,12 @@ export default function AdminPage() {
       const { error: insertError } = await supabase.from("products").insert([
         {
           name: name.trim(),
+          brand: brand === "Generic / Other" ? null : brand,
           category,
           price: Number(price),
           original_price: regularPrice,
+          cost_price: costPrice ? Number(costPrice) : null,
+          badge: badge === "None" ? null : badge,
           stock_quantity: calculatedQty,
           size_stocks: sizeStocks,
           available_sizes: selectedSizes,
@@ -489,6 +794,9 @@ export default function AdminPage() {
       if (insertError) throw new Error("Database insert error: " + insertError.message);
 
       setName("");
+      setBrand("Yonex");
+      setCostPrice("");
+      setBadge("None");
       setPrice("");
       setOriginalPrice("");
       setStockQuantity("5");
@@ -508,9 +816,9 @@ export default function AdminPage() {
     }
   }
 
-  // Quick Stock Stepper
   async function handleQuickStockClick(product: Product, delta: number) {
-    const currentSizes = product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
+    const currentSizes =
+      product.available_sizes || (product.size_stocks ? Object.keys(product.size_stocks) : []);
 
     if (currentSizes.length > 0) {
       setQuickStockTarget({ product, delta });
@@ -582,26 +890,32 @@ export default function AdminPage() {
   }
 
   const handleOpenEdit = (p: Product) => {
-    const rawImages = (p.images && p.images.length > 0)
-      ? p.images
-      : p.image_url ? [p.image_url] : [""];
+    const rawImages =
+      p.images && p.images.length > 0 ? p.images : p.image_url ? [p.image_url] : [""];
 
-    const currentSizes = p.available_sizes || (p.size_stocks ? Object.keys(p.size_stocks) : []);
-    
+    const currentSizes =
+      p.available_sizes || (p.size_stocks ? Object.keys(p.size_stocks) : []);
+
     const initialSizeStocks: Record<string, number> = {};
     currentSizes.forEach((sz) => {
-      initialSizeStocks[sz] = p.size_stocks?.[sz] ?? (p.stock_quantity ? Math.floor(p.stock_quantity / currentSizes.length) || 1 : 1);
+      initialSizeStocks[sz] =
+        p.size_stocks?.[sz] ??
+        (p.stock_quantity ? Math.floor(p.stock_quantity / currentSizes.length) || 1 : 1);
     });
 
     setEditFormData({
       name: p.name,
+      brand: (p as any).brand || "Yonex",
       category: p.category,
+      cost_price: (p as any).cost_price ? String((p as any).cost_price) : "",
       price: String(p.price),
       original_price: p.original_price ? String(p.original_price) : "",
+      badge: (p as any).badge || "None",
       stock_quantity: String(p.stock_quantity ?? (p.in_stock ? 10 : 0)),
       description: p.description || "",
       available_sizes: currentSizes,
-      size_stocks: p.size_stocks && Object.keys(p.size_stocks).length > 0 ? p.size_stocks : initialSizeStocks,
+      size_stocks:
+        p.size_stocks && Object.keys(p.size_stocks).length > 0 ? p.size_stocks : initialSizeStocks,
       images: rawImages,
     });
     setEditingProduct(p);
@@ -625,9 +939,12 @@ export default function AdminPage() {
         .from("products")
         .update({
           name: editFormData.name.trim(),
+          brand: editFormData.brand === "Generic / Other" ? null : editFormData.brand,
           category: editFormData.category,
+          cost_price: editFormData.cost_price ? Number(editFormData.cost_price) : null,
           price: Number(editFormData.price),
           original_price: editFormData.original_price ? Number(editFormData.original_price) : null,
+          badge: editFormData.badge === "None" ? null : editFormData.badge,
           stock_quantity: totalQty,
           size_stocks: editFormData.size_stocks,
           in_stock: totalQty > 0,
@@ -649,7 +966,6 @@ export default function AdminPage() {
     }
   };
 
-  // Lockscreen View
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 font-sans relative overflow-hidden">
@@ -716,29 +1032,26 @@ export default function AdminPage() {
     );
   }
 
-  const totalUnits = products.reduce(
-    (acc, p) => acc + (p.stock_quantity ?? (p.in_stock ? 1 : 0)),
-    0
-  );
-
-  const isFootwear = category.toLowerCase().includes("footwear") || category.toLowerCase().includes("boot");
-  const isApparelOrJersey = 
-    category.toLowerCase().includes("jersey") || 
-    category.toLowerCase().includes("apparel") || 
+  const isFootwear =
+    category.toLowerCase().includes("footwear") || category.toLowerCase().includes("boot");
+  const isApparelOrJersey =
+    category.toLowerCase().includes("jersey") ||
+    category.toLowerCase().includes("apparel") ||
     category.toLowerCase().includes("gym") ||
     category.toLowerCase().includes("kit");
 
-  const isEditFootwear = editFormData.category.toLowerCase().includes("footwear") || editFormData.category.toLowerCase().includes("boot");
-  const isEditApparelOrJersey = 
-    editFormData.category.toLowerCase().includes("jersey") || 
-    editFormData.category.toLowerCase().includes("apparel") || 
+  const isEditFootwear =
+    editFormData.category.toLowerCase().includes("footwear") ||
+    editFormData.category.toLowerCase().includes("boot");
+  const isEditApparelOrJersey =
+    editFormData.category.toLowerCase().includes("jersey") ||
+    editFormData.category.toLowerCase().includes("apparel") ||
     editFormData.category.toLowerCase().includes("gym") ||
     editFormData.category.toLowerCase().includes("kit");
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans p-4 sm:p-8 transition-colors duration-300">
       <div className="max-w-7xl mx-auto space-y-6">
-        
         {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
           <div className="flex items-center gap-3.5">
@@ -759,7 +1072,44 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Monthly Analytics Filter Dropdown */}
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+              <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-slate-400 font-semibold">Period:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                aria-label="Filter ledger period"
+                className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+              >
+                <option value="ALL" className="bg-slate-900">
+                  All-Time Summary
+                </option>
+                {availableMonths.map((mKey) => {
+                  const d = new Date(`${mKey}-01`);
+                  const label = d.toLocaleDateString("en-KE", { month: "long", year: "numeric" });
+                  return (
+                    <option key={mKey} value={mKey} className="bg-slate-900">
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* In-Dashboard Wipe All Orders Button */}
+            <button
+              type="button"
+              disabled={isResetting || orders.length === 0}
+              onClick={handleResetLedgerToZero}
+              className="p-2.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800/80 text-rose-400 hover:text-rose-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Permanently wipe test orders and reset ledger metrics to zero"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{isResetting ? "Resetting..." : "Reset Ledger (0)"}</span>
+            </button>
+
             <button
               onClick={() => {
                 fetchOrders();
@@ -794,9 +1144,16 @@ export default function AdminPage() {
             <p className="text-2xl font-black text-white">
               KSH {analytics.grossRevenue.toLocaleString()}
             </p>
-            <span className="text-[11px] text-emerald-400 font-medium">
-              From {analytics.completedCount} fulfilled orders
-            </span>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-emerald-400 font-medium">
+                From {analytics.completedCount} fulfilled orders
+              </span>
+              {selectedMonth !== "ALL" && (
+                <span className="text-slate-500 font-mono">
+                  All-time: KSH {analytics.allTimeGross.toLocaleString()}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2 shadow-xs">
@@ -877,28 +1234,117 @@ export default function AdminPage() {
         {/* ======================= TAB 1: ORDERS & SALES LEDGER ======================= */}
         {activeTab === "orders" && (
           <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-4">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="font-bold text-sm text-white">Live Customer Orders & Payments</h3>
                 <p className="text-xs text-slate-400">
-                  Track client names, size choices, delivery notes, and mark orders as paid/completed or cancelled
+                  Track client names, sizes, delivery notes, generate PDF monthly receipts, and clear the active view.
                 </p>
               </div>
-              <span className="text-xs font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-800/50 px-3 py-1 rounded-xl">
-                Real-Time Sync Active
-              </span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 3-Way Segmented Board View */}
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setOrderViewScope("active")}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                      orderViewScope === "active"
+                        ? "bg-emerald-500 text-black shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Active Board ({orders.filter((o) => !o.is_archived && o.status !== "cancelled").length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOrderViewScope("archived")}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                      orderViewScope === "archived"
+                        ? "bg-emerald-500 text-black shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <Archive className="w-3 h-3" />
+                    <span>Fulfilled Ledger</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOrderViewScope("cancelled")}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                      orderViewScope === "cancelled"
+                        ? "bg-rose-500 text-white shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <XCircle className="w-3 h-3" />
+                    <span>Cancelled ({orders.filter((o) => o.status === "cancelled").length})</span>
+                  </button>
+                </div>
+
+                {/* Export PDF Button */}
+                <button
+                  type="button"
+                  disabled={isExportingPdf || displayedOrders.length === 0}
+                  onClick={generateSalesPdf}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-40"
+                  title="Export styled PDF report"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isExportingPdf ? "Generating..." : "Export PDF Report"}</span>
+                </button>
+
+                {/* Bulk Clear Actions for Active View */}
+                {orderViewScope === "active" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={archiveAllCompleted}
+                      className="px-3.5 py-2 bg-emerald-950 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      title="Move all fulfilled orders to archive to clean the view"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>Clear Fulfilled</span>
+                    </button>
+
+                    {orders.some((o) => o.status === "cancelled" && !o.is_archived) && (
+                      <button
+                        type="button"
+                        onClick={dismissAllCancelled}
+                        className="px-3.5 py-2 bg-rose-950 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+                        title="Push cancelled orders to the Cancelled Space"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Clear Cancelled</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {loadingOrders ? (
               <div className="p-12 text-center text-xs text-slate-500">
                 Loading sales ledger...
               </div>
-            ) : orders.length === 0 ? (
+            ) : displayedOrders.length === 0 ? (
               <div className="p-16 text-center space-y-2">
                 <ShoppingBag className="w-10 h-10 text-slate-700 mx-auto" />
-                <p className="text-sm font-bold text-slate-400">No orders recorded yet.</p>
+                <p className="text-sm font-bold text-slate-400">
+                  {orderViewScope === "active"
+                    ? "Active board is clean and clear."
+                    : orderViewScope === "cancelled"
+                    ? "No cancelled orders on record for this period."
+                    : "No fulfilled orders in the archive for this period."}
+                </p>
                 <p className="text-xs text-slate-600">
-                  Customer submissions from WhatsApp checkout will automatically log here.
+                  {orderViewScope === "active"
+                    ? "New orders submitted through WhatsApp checkout will appear here in real-time."
+                    : orderViewScope === "cancelled"
+                    ? "Orders cancelled by customers or staff will be safely preserved here."
+                    : "Fulfilled orders you have cleared from the active board are stored here."}
                 </p>
               </div>
             ) : (
@@ -912,10 +1358,11 @@ export default function AdminPage() {
                       <th className="p-4">Fulfillment</th>
                       <th className="p-4">Order Value</th>
                       <th className="p-4">Status & Action</th>
+                      <th className="p-4 text-right">Ledger</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {orders.map((order) => {
+                    {displayedOrders.map((order) => {
                       const isPending = order.status === "pending";
                       const isCompleted = order.status === "completed";
                       const isCancelled = order.status === "cancelled";
@@ -1034,6 +1481,29 @@ export default function AdminPage() {
                               )}
                             </div>
                           </td>
+
+                          {/* Individual Archive / Unarchive Action */}
+                          <td className="p-4 text-right whitespace-nowrap">
+                            {order.is_archived ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleArchiveOrder(order.id, false)}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
+                                title="Restore to active board"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleArchiveOrder(order.id, true)}
+                                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition cursor-pointer border border-slate-800"
+                                title="Move to archive"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -1086,24 +1556,49 @@ export default function AdminPage() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 h-fit space-y-4 shadow-sm">
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
                   <Plus className="w-4 h-4 text-emerald-400" />
-                  Add Product & Set Sizes
+                  Add Equipment & Configure Details
                 </h2>
 
-                <form onSubmit={handleAddProduct} className="space-y-3.5 text-xs">
+                <form onSubmit={handleAddProduct} className="space-y-4 text-xs">
+                  {/* Product Name */}
                   <div>
                     <label className="block text-slate-400 mb-1 font-semibold">
-                      Equipment / Product Name
+                      Equipment / Product Name *
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Kawasaki Badminton Shoes"
+                      placeholder="e.g. Kawasaki Badminton Shoes or Arsenal Away Kit"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500 transition"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500 transition font-medium"
                     />
                   </div>
 
+                  {/* Brand Quick-Select Chips */}
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-semibold">
+                      Brand / Maker
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {BRANDS.map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => setBrand(b)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                            brand === b
+                              ? "bg-emerald-500 text-black shadow-xs"
+                              : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {b}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Category & Stock Quantity */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-slate-400 mb-1 font-semibold">
@@ -1119,7 +1614,9 @@ export default function AdminPage() {
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500 transition font-medium"
                       >
                         {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>{c}</option>
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -1133,45 +1630,100 @@ export default function AdminPage() {
                         min="0"
                         required
                         disabled={selectedSizes.length > 0}
-                        value={selectedSizes.length > 0 ? Object.values(sizeStocks).reduce((a, b) => a + b, 0) : stockQuantity}
+                        value={
+                          selectedSizes.length > 0
+                            ? Object.values(sizeStocks).reduce((a, b) => a + b, 0)
+                            : stockQuantity
+                        }
                         onChange={(e) => setStockQuantity(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-bold focus:outline-none focus:border-emerald-500 transition disabled:opacity-60"
                       />
                     </div>
                   </div>
 
-                  {/* Price Grid */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold">
-                        Sale Price (KSH) *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        placeholder="e.g. 1600"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-emerald-400 font-bold focus:outline-none focus:border-emerald-500 transition"
-                      />
+                  {/* Pricing & Cost Margin Section */}
+                  <div className="p-3.5 bg-slate-950/70 border border-slate-800/90 rounded-2xl space-y-2.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Pricing & Profit Margins
+                    </span>
+
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold text-[11px]">
+                          Buying Cost
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 1000"
+                          value={costPrice}
+                          onChange={(e) => setCostPrice(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-slate-300 font-semibold focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-emerald-400 mb-1 font-semibold text-[11px]">
+                          Selling Price *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          placeholder="e.g. 1600"
+                          value={price}
+                          onChange={(e) => setPrice(e.target.value)}
+                          className="w-full bg-slate-900 border border-emerald-500/50 rounded-xl p-2 text-emerald-400 font-black focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1 font-semibold text-[11px]">
+                          Regular Price
+                        </label>
+                        <input
+                          type="number"
+                          placeholder="Strikethrough"
+                          value={originalPrice}
+                          onChange={(e) => setOriginalPrice(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-slate-400 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-semibold flex items-center gap-1">
-                        <Tag className="w-3 h-3 text-rose-500" />
-                        Regular Price (KSH)
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="Optional discount"
-                        value={originalPrice}
-                        onChange={(e) => setOriginalPrice(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500 transition"
-                      />
+                    {/* Live Profit Margin Pill */}
+                    {liveMargin && (
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-950/60 border border-emerald-800/60 rounded-xl text-[11px]">
+                        <span className="text-emerald-300 font-medium">Profit per Unit:</span>
+                        <span className="text-emerald-400 font-bold">
+                          +KSH {liveMargin.profit.toLocaleString()} ({liveMargin.percentage}% Margin)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Storefront Highlight Badge */}
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-semibold">
+                      Storefront Badge
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {BADGES.map((b) => (
+                        <button
+                          key={b.value}
+                          type="button"
+                          onClick={() => setBadge(b.value)}
+                          className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition cursor-pointer text-center ${
+                            badge === b.value
+                              ? "bg-emerald-500 text-black shadow-xs"
+                              : "bg-slate-950 border border-slate-800 text-slate-400 hover:border-slate-700"
+                          }`}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
-                  {/* SIZES SELECTOR */}
+                  {/* Sizes Selector */}
                   {(isFootwear || isApparelOrJersey) && (
                     <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
                       <div className="flex items-center justify-between">
@@ -1219,14 +1771,19 @@ export default function AdminPage() {
                           </span>
                           <div className="grid grid-cols-2 gap-2">
                             {selectedSizes.map((sz) => (
-                              <div key={sz} className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5">
+                              <div
+                                key={sz}
+                                className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5"
+                              >
                                 <span className="text-xs font-bold text-slate-200">Size {sz}:</span>
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="number"
                                     min="0"
                                     value={sizeStocks[sz] ?? 1}
-                                    onChange={(e) => handleSizeStockChange(sz, parseInt(e.target.value, 10) || 0)}
+                                    onChange={(e) =>
+                                      handleSizeStockChange(sz, parseInt(e.target.value, 10) || 0)
+                                    }
                                     className="w-12 text-center text-xs font-black bg-slate-800 border border-slate-700 rounded-lg py-1 text-emerald-400 focus:outline-none"
                                   />
                                   <span className="text-[10px] text-slate-400 font-semibold">prs</span>
@@ -1277,8 +1834,15 @@ export default function AdminPage() {
                         {previewUrls.length > 0 && (
                           <div className="grid grid-cols-2 gap-2">
                             {previewUrls.map((url, idx) => (
-                              <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-slate-800 bg-slate-950">
-                                <img src={url} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
+                              <div
+                                key={idx}
+                                className="relative aspect-square rounded-xl overflow-hidden border border-slate-800 bg-slate-950"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Preview ${idx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
                                 <button
                                   type="button"
                                   onClick={() => removeSelectedFile(idx)}
@@ -1368,25 +1932,31 @@ export default function AdminPage() {
                     )}
                   </div>
 
+                  {/* Roomy Specs & Description Area */}
                   <div>
-                    <label className="block text-slate-400 mb-1 font-semibold">
-                      Specs & Description
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-slate-400 font-semibold">
+                        Detailed Specs & Product Description
+                      </label>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {description.length} chars
+                      </span>
+                    </div>
                     <textarea
-                      rows={2}
-                      placeholder="Material, string tension, fit details..."
+                      rows={5}
+                      placeholder="Add comprehensive specs:&#10;• Frame material / string tension (e.g. 24-28 lbs)&#10;• Sole grip & cushion type&#10;• Fitting notes (e.g. snug fit, recommend 1 size up)&#10;• Included accessories"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500 transition"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500 transition leading-relaxed resize-y font-normal"
                     />
                   </div>
 
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold py-3 rounded-xl transition shadow-sm disabled:opacity-50 cursor-pointer active:scale-98"
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold py-3.5 rounded-xl transition shadow-sm disabled:opacity-50 cursor-pointer active:scale-98 text-xs tracking-wide"
                   >
-                    {submitting ? "Publishing Item..." : "Publish to Shop"}
+                    {submitting ? "Publishing to Shop..." : "Publish to Shop Catalog"}
                   </button>
                 </form>
               </div>
@@ -1408,8 +1978,10 @@ export default function AdminPage() {
                       const qty = p.stock_quantity ?? (p.in_stock ? 1 : 0);
                       const isOutOfStock = qty === 0;
                       const isLowStock = qty > 0 && qty <= 2;
-                      const hasDiscount = p.original_price && Number(p.original_price) > Number(p.price);
-                      const photoCount = (p.images && p.images.length > 0) ? p.images.length : (p.image_url ? 1 : 0);
+                      const hasDiscount =
+                        p.original_price && Number(p.original_price) > Number(p.price);
+                      const photoCount =
+                        p.images && p.images.length > 0 ? p.images.length : p.image_url ? 1 : 0;
 
                       return (
                         <div
@@ -1431,9 +2003,16 @@ export default function AdminPage() {
                             </div>
 
                             <div className="min-w-0">
-                              <span className="font-semibold text-white text-xs block truncate">
-                                {p.name}
-                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-white text-xs block truncate">
+                                  {p.name}
+                                </span>
+                                {(p as any).badge && (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded-full font-bold bg-emerald-950 border border-emerald-800 text-emerald-400">
+                                    {(p as any).badge}
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 <span className="text-[11px] text-emerald-400 font-black">
                                   KSH {Number(p.price).toLocaleString()}
@@ -1441,6 +2020,11 @@ export default function AdminPage() {
                                 {hasDiscount && (
                                   <span className="text-[10px] text-slate-400 line-through">
                                     KSH {Number(p.original_price).toLocaleString()}
+                                  </span>
+                                )}
+                                {(p as any).brand && (
+                                  <span className="text-[10px] text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-950/60 border border-emerald-800/40 font-semibold">
+                                    {(p as any).brand}
                                   </span>
                                 )}
                                 <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 font-medium">
@@ -1536,7 +2120,6 @@ export default function AdminPage() {
             </div>
           </div>
         )}
-
       </div>
 
       {/* Quick Size Selection Mini-Modal */}
@@ -1569,7 +2152,9 @@ export default function AdminPage() {
               <div className="grid grid-cols-3 gap-2">
                 {(
                   quickStockTarget.product.available_sizes ||
-                  (quickStockTarget.product.size_stocks ? Object.keys(quickStockTarget.product.size_stocks) : [])
+                  (quickStockTarget.product.size_stocks
+                    ? Object.keys(quickStockTarget.product.size_stocks)
+                    : [])
                 ).map((sz) => {
                   const currentCount = quickStockTarget.product.size_stocks?.[sz] ?? 0;
                   const isButtonDisabled = quickStockTarget.delta < 0 && currentCount <= 0;
@@ -1632,40 +2217,56 @@ export default function AdminPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">
-                    Category
+                    Brand
                   </label>
                   <select
-                    value={editFormData.category}
-                    onChange={(e) => setEditFormData({ ...editFormData, category: e.target.value })}
+                    value={editFormData.brand}
+                    onChange={(e) => setEditFormData({ ...editFormData, brand: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                    {BRANDS.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">
-                    {editFormData.available_sizes.length > 0 ? "Total Stock (Auto-Sum)" : "Stock Units"}
+                    Category
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    disabled={editFormData.available_sizes.length > 0}
-                    value={
-                      editFormData.available_sizes.length > 0
-                        ? Object.values(editFormData.size_stocks).reduce((a, b) => a + b, 0)
-                        : editFormData.stock_quantity
+                  <select
+                    value={editFormData.category}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, category: e.target.value })
                     }
-                    onChange={(e) => setEditFormData({ ...editFormData, stock_quantity: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-bold disabled:opacity-60"
-                  />
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">
+                    Buying Cost (KSH)
+                  </label>
+                  <input
+                    type="number"
+                    value={editFormData.cost_price}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, cost_price: e.target.value })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">
                     Sale Price (KSH)
@@ -1686,8 +2287,52 @@ export default function AdminPage() {
                   <input
                     type="number"
                     value={editFormData.original_price}
-                    onChange={(e) => setEditFormData({ ...editFormData, original_price: e.target.value })}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, original_price: e.target.value })
+                    }
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">
+                    Storefront Badge
+                  </label>
+                  <select
+                    value={editFormData.badge}
+                    onChange={(e) => setEditFormData({ ...editFormData, badge: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    {BADGES.map((b) => (
+                      <option key={b.value} value={b.value}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">
+                    {editFormData.available_sizes.length > 0
+                      ? "Total Stock (Auto-Sum)"
+                      : "Stock Units"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    disabled={editFormData.available_sizes.length > 0}
+                    value={
+                      editFormData.available_sizes.length > 0
+                        ? Object.values(editFormData.size_stocks).reduce((a, b) => a + b, 0)
+                        : editFormData.stock_quantity
+                    }
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, stock_quantity: e.target.value })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-bold disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -1724,14 +2369,19 @@ export default function AdminPage() {
                       </span>
                       <div className="grid grid-cols-2 gap-2">
                         {editFormData.available_sizes.map((sz) => (
-                          <div key={sz} className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5">
+                          <div
+                            key={sz}
+                            className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5"
+                          >
                             <span className="text-xs font-bold text-slate-200">Size {sz}:</span>
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
                                 min="0"
                                 value={editFormData.size_stocks[sz] ?? 1}
-                                onChange={(e) => handleEditSizeStockChange(sz, parseInt(e.target.value, 10) || 0)}
+                                onChange={(e) =>
+                                  handleEditSizeStockChange(sz, parseInt(e.target.value, 10) || 0)
+                                }
                                 className="w-12 text-center text-xs font-black bg-slate-800 border border-slate-700 rounded-lg py-1 text-emerald-400 focus:outline-none"
                               />
                               <span className="text-[10px] text-slate-400 font-semibold">prs</span>
@@ -1752,7 +2402,9 @@ export default function AdminPage() {
                   {editFormData.images.length < 4 && (
                     <button
                       type="button"
-                      onClick={() => setEditFormData({ ...editFormData, images: [...editFormData.images, ""] })}
+                      onClick={() =>
+                        setEditFormData({ ...editFormData, images: [...editFormData.images, ""] })
+                      }
                       className="text-emerald-400 font-bold hover:underline cursor-pointer"
                     >
                       + Add URL
@@ -1796,9 +2448,11 @@ export default function AdminPage() {
                   Specs & Description
                 </label>
                 <textarea
-                  rows={2}
+                  rows={4}
                   value={editFormData.description}
-                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                  onChange={(e) =>
+                    setEditFormData({ ...editFormData, description: e.target.value })
+                  }
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white"
                 />
               </div>
