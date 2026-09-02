@@ -70,6 +70,7 @@ interface OrderItem {
   size?: string;
   quantity: number;
   price: number;
+  cost_price?: number;
 }
 
 interface Order {
@@ -458,12 +459,25 @@ export default function AdminPage() {
     });
   }, [orders, selectedMonth]);
 
+  // Exact Cost-Based Financial Analytics Calculations with safe fallback for legacy orders
   const analytics = useMemo(() => {
     const completedOrders = ordersInSelectedPeriod.filter((o) => o.status === "completed");
     const pendingOrders = ordersInSelectedPeriod.filter((o) => o.status === "pending");
 
     const grossRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total_amount), 0);
-    const estimatedNetProfit = Math.round(grossRevenue * 0.35);
+
+    // Exact Net Profit calculation with fallback estimation for older legacy items missing cost_price
+    const exactNetProfit = completedOrders.reduce((acc, order) => {
+      const orderProfit = order.items?.reduce((itemAcc, item) => {
+        const itemSellingPrice = Number(item.price) || 0;
+        const itemCostPrice = item.cost_price !== undefined && item.cost_price !== null
+          ? Number(item.cost_price)
+          : itemSellingPrice * 0.65; // Safe fallback for unassigned historical items
+        const qty = Number(item.quantity) || 1;
+        return itemAcc + (itemSellingPrice - itemCostPrice) * qty;
+      }, 0) || 0;
+      return acc + orderProfit;
+    }, 0);
 
     const totalUnitsSold = completedOrders.reduce((acc, o) => {
       const unitsInOrder = o.items?.reduce((uSum, item) => uSum + (item.quantity || 1), 0) || 0;
@@ -475,7 +489,7 @@ export default function AdminPage() {
 
     return {
       grossRevenue,
-      estimatedNetProfit,
+      exactNetProfit,
       completedCount: completedOrders.length,
       pendingCount: pendingOrders.length,
       totalUnitsSold,
@@ -531,7 +545,7 @@ export default function AdminPage() {
       doc.text(`Period Scope: ${monthLabel}`, 14, 55);
       doc.text(`Gross Revenue (Fulfilled): KSH ${analytics.grossRevenue.toLocaleString()}`, 14, 61);
       doc.text(
-        `Estimated Net Profit (~35% margin): KSH ${analytics.estimatedNetProfit.toLocaleString()}`,
+        `Net Profit (Exact Cost): KSH ${analytics.exactNetProfit.toLocaleString()}`,
         14,
         67
       );
@@ -742,7 +756,7 @@ export default function AdminPage() {
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !price) return;
+    if (!name.trim() || !price || !costPrice) return;
 
     setSubmitting(true);
     try {
@@ -779,7 +793,7 @@ export default function AdminPage() {
           category,
           price: Number(price),
           original_price: regularPrice,
-          cost_price: costPrice ? Number(costPrice) : null,
+          cost_price: Number(costPrice),
           badge: badge === "None" ? null : badge,
           stock_quantity: calculatedQty,
           size_stocks: sizeStocks,
@@ -923,7 +937,7 @@ export default function AdminPage() {
 
   const handleSaveProductEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProduct) return;
+    if (!editingProduct || !editFormData.cost_price) return;
 
     setSavingEdit(true);
     try {
@@ -941,7 +955,7 @@ export default function AdminPage() {
           name: editFormData.name.trim(),
           brand: editFormData.brand === "Generic / Other" ? null : editFormData.brand,
           category: editFormData.category,
-          cost_price: editFormData.cost_price ? Number(editFormData.cost_price) : null,
+          cost_price: Number(editFormData.cost_price),
           price: Number(editFormData.price),
           original_price: editFormData.original_price ? Number(editFormData.original_price) : null,
           badge: editFormData.badge === "None" ? null : editFormData.badge,
@@ -1158,16 +1172,16 @@ export default function AdminPage() {
 
           <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-2 shadow-xs">
             <div className="flex items-center justify-between text-slate-400 text-xs font-bold uppercase tracking-wider">
-              <span>Estimated Net Profit</span>
+              <span>Net Profit (Exact Cost)</span>
               <div className="p-2 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800/50">
                 <TrendingUp className="w-4 h-4" />
               </div>
             </div>
             <p className="text-2xl font-black text-emerald-400">
-              KSH {analytics.estimatedNetProfit.toLocaleString()}
+              KSH {analytics.exactNetProfit.toLocaleString()}
             </p>
             <span className="text-[11px] text-slate-400 font-medium">
-              ~35% average product margin
+              Based on actual item cost prices
             </span>
           </div>
 
@@ -1650,10 +1664,11 @@ export default function AdminPage() {
                     <div className="grid grid-cols-3 gap-2.5">
                       <div>
                         <label className="block text-slate-400 mb-1 font-semibold text-[11px]">
-                          Buying Cost
+                          Buying Cost *
                         </label>
                         <input
                           type="number"
+                          required
                           placeholder="e.g. 1000"
                           value={costPrice}
                           onChange={(e) => setCostPrice(e.target.value)}
@@ -2255,10 +2270,11 @@ export default function AdminPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">
-                    Buying Cost (KSH)
+                    Buying Cost (KSH) *
                   </label>
                   <input
                     type="number"
+                    required
                     value={editFormData.cost_price}
                     onChange={(e) =>
                       setEditFormData({ ...editFormData, cost_price: e.target.value })
@@ -2269,7 +2285,7 @@ export default function AdminPage() {
 
                 <div>
                   <label className="block text-slate-400 mb-1 font-semibold">
-                    Sale Price (KSH)
+                    Sale Price (KSH) *
                   </label>
                   <input
                     type="number"

@@ -67,6 +67,7 @@ export default function CartDrawer() {
         size: item.selectedSize || undefined,
         quantity: item.quantity,
         price: Number(item.product.price),
+        cost_price: Number(item.product.cost_price) || 0, // <-- Captures exact buying cost for precise profit calculation
       }));
 
       // 1. Deduct exact stock per size from Supabase

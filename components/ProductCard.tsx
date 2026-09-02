@@ -10,6 +10,7 @@ export interface Product {
   brand?: string;
   price: number;
   original_price?: number;
+  cost_price?: number; // <-- Added for exact net profit calculation
   category: string;
   badge?: string;
   image_url?: string;
@@ -18,7 +19,7 @@ export interface Product {
   in_stock: boolean;
   stock_quantity?: number;
   available_sizes?: string[];
-  size_stocks?: Record<string, number>; // e.g. { "40": 2, "41": 0, "42": 4 }
+  size_stocks?: Record<string, number>;
 }
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -87,6 +88,7 @@ export default function ProductCard({ product }: { product: Product }) {
       ...product,
       image_url: displayCoverImage,
       selectedSize: selectedSize || undefined,
+      cost_price: Number(product.cost_price) || 0, // <-- Explicitly passes exact product cost_price into cart items
     });
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1200);
